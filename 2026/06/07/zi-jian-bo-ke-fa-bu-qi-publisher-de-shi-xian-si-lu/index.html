@@ -1,0 +1,276 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>自建博客发布器 publisher 的实现思路 | Layne's Blog</title><meta name="author" content="Layne"><meta name="copyright" content="Layne"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="一个把本地 Markdown &#x2F; Notion 文章一键发布到 Hexo 博客（后续接入微信公众号）的小工具，从架构到关键细节的完整记录。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="自建博客发布器 publisher 的实现思路">
+<meta property="og:url" content="https://maimengshangren.github.io/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/index.html">
+<meta property="og:site_name" content="Layne&#39;s Blog">
+<meta property="og:description" content="一个把本地 Markdown &#x2F; Notion 文章一键发布到 Hexo 博客（后续接入微信公众号）的小工具，从架构到关键细节的完整记录。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://maimengshangren.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-06-07T12:00:00.000Z">
+<meta property="article:modified_time" content="2026-06-07T11:46:14.662Z">
+<meta property="article:author" content="Layne">
+<meta property="article:tag" content="Hexo">
+<meta property="article:tag" content="Notion">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="工具链">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://maimengshangren.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "自建博客发布器 publisher 的实现思路",
+  "url": "https://maimengshangren.github.io/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/",
+  "image": "https://maimengshangren.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-06-07T12:00:00.000Z",
+  "dateModified": "2026-06-07T11:46:14.662Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Layne",
+      "url": "https://maimengshangren.github.io"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://maimengshangren.github.io/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css?v=5.5.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.1.0/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: undefined,
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":false},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.13.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '自建博客发布器 publisher 的实现思路',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 8.1.2"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">2</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">4</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><span class="site-name">Layne's Blog</span></a><a class="nav-page-title" href="/"><span class="site-name">自建博客发布器 publisher 的实现思路</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  返回首页</span></span></a></span><div id="menus"><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">自建博客发布器 publisher 的实现思路</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2026-06-07T12:00:00.000Z" title="发表于 2026-06-07 20:00:00">2026-06-07</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2026-06-07T11:46:14.662Z" title="更新于 2026-06-07 19:46:14">2026-06-07</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%8A%80%E6%9C%AF/">技术</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">浏览量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="为什么自己写"><a href="#为什么自己写" class="headerlink" title="为什么自己写"></a>为什么自己写</h2><p>我的博客是 Hexo + Butterfly 主题，托管在 GitHub Pages，push 到 <code>main</code> 由 GitHub Actions 自动 build 然后发 <code>gh-pages</code>。链路本身已经很顺，但写作侧仍然碎：</p>
+<ul>
+<li>草稿可能在 Notion 里，也可能在本地 <code>*.md</code> 里，每次手动复制粘贴、改 frontmatter、传图片</li>
+<li>同一篇要发到公众号，又得重排版、再传一遍图</li>
+<li>没有”已发”状态机，重复发布的概率不小</li>
+</ul>
+<p>于是写一个发布器 <code>publisher</code>，跟博客仓库同级目录，定位是<strong>单人写作的发布前置层</strong>：把”内容来自哪里”和”要发到哪里”解耦，自己只关心写作本身。</p>
+<p>本文记录这个工具的实现思路。M1（本地 → Hexo）和 M2（Notion → Hexo）已经完成，M3（公众号草稿）排在后面。</p>
+<h2 id="总体架构"><a href="#总体架构" class="headerlink" title="总体架构"></a>总体架构</h2><p>核心是三段式：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">┌─────────────┐      ┌──────────────┐      ┌─────────────────┐</span><br><span class="line">│ Source      │      │ Article      │      │ Target          │</span><br><span class="line">│ - 本地 md   │ ───▶ │ (标准化模型) │ ───▶ │ - Hexo (Git)    │</span><br><span class="line">│ - Notion    │      │ 标题/正文/   │      │ - 微信公众号    │</span><br><span class="line">└─────────────┘      │ 标签/图片…   │      └─────────────────┘</span><br><span class="line">                     └──────────────┘</span><br></pre></td></tr></table></figure>
+
+<p><strong>Source</strong> 只做一件事：把任意来源的内容拉成统一的 <code>Article</code> 模型。<strong>Target</strong> 只关心怎么把 <code>Article</code> 落到某个发布渠道。中间的 <code>Article</code> 不依赖任何具体来源或渠道，方便后续加新源（语雀、Obsidian）或新渠道（公众号、知乎）。</p>
+<p>工程目录：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">publisher/</span><br><span class="line">├── pyproject.toml</span><br><span class="line">├── config.yaml             # 路径、字段映射</span><br><span class="line">├── .env.example            # NOTION_TOKEN 等敏感配置</span><br><span class="line">└── src/publisher/</span><br><span class="line">    ├── cli.py              # typer 入口</span><br><span class="line">    ├── models.py           # Article / Asset</span><br><span class="line">    ├── config.py           # 配置加载</span><br><span class="line">    ├── sources/</span><br><span class="line">    │   ├── local.py        # 本地 md</span><br><span class="line">    │   └── notion.py       # Notion API</span><br><span class="line">    ├── targets/</span><br><span class="line">    │   └── hexo.py         # 写文件 + git push</span><br><span class="line">    ├── render/</span><br><span class="line">    │   └── md_to_hexo.py   # frontmatter + 图片路径重写</span><br><span class="line">    └── utils/&#123;slug,state,image,log&#125;.py</span><br></pre></td></tr></table></figure>
+
+<h2 id="数据模型"><a href="#数据模型" class="headerlink" title="数据模型"></a>数据模型</h2><p><code>Article</code> 故意做得很轻，只保留发布所需的最小信息：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Article</span>:</span><br><span class="line">    title: <span class="built_in">str</span></span><br><span class="line">    body_md: <span class="built_in">str</span></span><br><span class="line">    source_id: <span class="built_in">str</span>       <span class="comment"># 用于幂等</span></span><br><span class="line">    source_kind: <span class="built_in">str</span>     <span class="comment"># &quot;local&quot; | &quot;notion&quot;</span></span><br><span class="line">    slug: <span class="built_in">str</span> | <span class="literal">None</span></span><br><span class="line">    date: datetime | <span class="literal">None</span></span><br><span class="line">    tags: <span class="built_in">list</span>[<span class="built_in">str</span>]</span><br><span class="line">    categories: <span class="built_in">list</span>[<span class="built_in">str</span>]</span><br><span class="line">    cover: <span class="built_in">str</span> | <span class="literal">None</span></span><br><span class="line">    summary: <span class="built_in">str</span> | <span class="literal">None</span></span><br><span class="line">    author: <span class="built_in">str</span> | <span class="literal">None</span></span><br><span class="line">    assets: <span class="built_in">list</span>[Asset]  <span class="comment"># 文章引用的图片</span></span><br><span class="line">    targets: <span class="built_in">list</span>[<span class="built_in">str</span>]   <span class="comment"># 来源指定的发布目标（可空）</span></span><br></pre></td></tr></table></figure>
+
+<p><code>Asset</code> 表示一个本地化后的图片：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Asset</span>:</span><br><span class="line">    local_path: Path      <span class="comment"># 一定指向本地真实文件</span></span><br><span class="line">    remote_url: <span class="built_in">str</span> | <span class="literal">None</span></span><br><span class="line">    ref_in_body: <span class="built_in">str</span>      <span class="comment"># 正文里出现的原始引用串，用作替换 key</span></span><br></pre></td></tr></table></figure>
+
+<p>关键点：<strong>所有图片在进入 <code>Article</code> 之前一定要被下载到本地</strong>。Notion 给的图片 URL 是 1 小时过期的临时 S3 链接，直接写进 Hexo 或公众号就是个定时炸弹。Source 层就把它解决掉，下游不用再担心。</p>
+<h2 id="Local-source：本地-Markdown"><a href="#Local-source：本地-Markdown" class="headerlink" title="Local source：本地 Markdown"></a>Local source：本地 Markdown</h2><p>最简单的源：</p>
+<ol>
+<li>用 <code>python-frontmatter</code> 解析 YAML 头</li>
+<li>缺字段就走 <code>config.yaml</code> 的默认值兜底（默认分类 <code>技术</code> 等）</li>
+<li>用正则 <code>!\[([^\]]*)\]\(([^)]+)\)</code> 扫正文里的图片引用，相对路径解析成绝对路径，挂到 <code>assets</code>，远程 URL 跳过</li>
+<li><code>source_id</code> 用 <code>local:&lt;文件路径 sha1&gt;</code>，便于幂等去重</li>
+</ol>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> _alt, url <span class="keyword">in</span> _IMG_RE.findall(body):</span><br><span class="line">    <span class="keyword">if</span> _is_remote(url) <span class="keyword">or</span> url <span class="keyword">in</span> seen:</span><br><span class="line">        <span class="keyword">continue</span></span><br><span class="line">    abs_path = (path.parent / url).resolve()</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> abs_path.exists():</span><br><span class="line">        <span class="keyword">continue</span></span><br><span class="line">    assets.append(Asset(local_path=abs_path, ref_in_body=url))</span><br></pre></td></tr></table></figure>
+
+<p><code>ref_in_body</code> 保留原样（比如 <code>./img/cover.png</code>），后面 render 阶段就用它做精确替换。</p>
+<h2 id="Notion-source：M2-的核心"><a href="#Notion-source：M2-的核心" class="headerlink" title="Notion source：M2 的核心"></a>Notion source：M2 的核心</h2><p>Notion 这部分最复杂，三件事：<strong>字段映射、块递归遍历、图片即时落盘</strong>。</p>
+<h3 id="字段映射"><a href="#字段映射" class="headerlink" title="字段映射"></a>字段映射</h3><p>Notion 数据库的字段名因人而异。我在 <code>config.yaml</code> 里全配成可改：</p>
+<figure class="highlight yaml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="attr">notion:</span></span><br><span class="line">  <span class="attr">property_title:</span> <span class="string">Name</span></span><br><span class="line">  <span class="attr">property_slug:</span> <span class="string">Slug</span></span><br><span class="line">  <span class="attr">property_tags:</span> <span class="string">Tags</span></span><br><span class="line">  <span class="attr">property_categories:</span> <span class="string">Categories</span></span><br><span class="line">  <span class="attr">property_cover:</span> <span class="string">Cover</span></span><br><span class="line">  <span class="attr">property_status:</span> <span class="string">Status</span></span><br><span class="line">  <span class="attr">property_targets:</span> <span class="string">Targets</span></span><br><span class="line">  <span class="attr">status_ready:</span> <span class="string">待发布</span></span><br><span class="line">  <span class="attr">status_published:</span> <span class="string">已发布</span></span><br></pre></td></tr></table></figure>
+
+<p>读取时按类型分发：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_read_multi_select</span>(<span class="params">page, name</span>) -&gt; <span class="built_in">list</span>[<span class="built_in">str</span>]:</span><br><span class="line">    p = page[<span class="string">&quot;properties&quot;</span>].get(name)</span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">not</span> p <span class="keyword">or</span> p[<span class="string">&quot;type&quot;</span>] != <span class="string">&quot;multi_select&quot;</span>:</span><br><span class="line">        <span class="keyword">return</span> []</span><br><span class="line">    <span class="keyword">return</span> [opt[<span class="string">&quot;name&quot;</span>] <span class="keyword">for</span> opt <span class="keyword">in</span> p.get(<span class="string">&quot;multi_select&quot;</span>) <span class="keyword">or</span> []]</span><br></pre></td></tr></table></figure>
+
+<h3 id="块递归-分页"><a href="#块递归-分页" class="headerlink" title="块递归 + 分页"></a>块递归 + 分页</h3><p><code>blocks.children.list</code> 单次最多返回 100 个块，要按 <code>next_cursor</code> 一直翻：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">_iter_all_blocks</span>(<span class="params">notion, block_id</span>):</span><br><span class="line">    cursor = <span class="literal">None</span></span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        resp = notion.blocks.children.<span class="built_in">list</span>(</span><br><span class="line">            block_id=block_id, start_cursor=cursor, page_size=<span class="number">100</span>,</span><br><span class="line">        )</span><br><span class="line">        <span class="keyword">for</span> b <span class="keyword">in</span> resp[<span class="string">&quot;results&quot;</span>]:</span><br><span class="line">            <span class="keyword">yield</span> b</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> resp[<span class="string">&quot;has_more&quot;</span>]:</span><br><span class="line">            <span class="keyword">return</span></span><br><span class="line">        cursor = resp[<span class="string">&quot;next_cursor&quot;</span>]</span><br></pre></td></tr></table></figure>
+
+<p>绝大多数块带 <code>has_children</code>（toggle、quote、列表项嵌套），递归一层就够。</p>
+<h3 id="块到-Markdown"><a href="#块到-Markdown" class="headerlink" title="块到 Markdown"></a>块到 Markdown</h3><p>我支持的块：<code>paragraph / heading_1-3 / bulleted_list_item / numbered_list_item / to_do / quote / callout / code / divider / image / bookmark / equation / table</code>，富文本支持 <code>bold / italic / code / strikethrough / link / equation</code>。</p>
+<p>实现上有几个小坑：</p>
+<ul>
+<li><strong>有序列表的编号</strong>要自己维护，连续的 <code>numbered_list_item</code> 计数，遇到其他块归零</li>
+<li><strong>callout 的 emoji</strong> 在 <code>icon.emoji</code> 里，兜底用 💡</li>
+<li><strong>table 不能 fall through 递归</strong>——<code>table_row</code> 已经在自己的逻辑里消费了，要 <code>continue</code></li>
+<li><strong>缩进</strong> 用 <code>&quot;  &quot; * indent</code> 实现嵌套列表的对齐</li>
+</ul>
+<h3 id="图片下载"><a href="#图片下载" class="headerlink" title="图片下载"></a>图片下载</h3><p>碰到 <code>image</code> 块就立刻下载到本地缓存，再把 <code>Asset</code> 塞进 <code>assets</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">url = _file_url(v)</span><br><span class="line">local = download_image(url, image_cache)</span><br><span class="line">assets.append(Asset(local_path=local, remote_url=url, ref_in_body=url))</span><br><span class="line">lines.append(<span class="string">f&quot;![<span class="subst">&#123;caption&#125;</span>](<span class="subst">&#123;url&#125;</span>)&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>缓存按 URL 的 sha1 命名，同篇文章重发不会重新下载：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">key = hashlib.sha1(url.encode()).hexdigest()[:<span class="number">16</span>]</span><br><span class="line"><span class="keyword">for</span> existing <span class="keyword">in</span> cache_dir.glob(<span class="string">f&quot;<span class="subst">&#123;key&#125;</span>.*&quot;</span>):</span><br><span class="line">    <span class="keyword">return</span> existing</span><br></pre></td></tr></table></figure>
+
+<p>正文里<strong>仍然写原始 URL</strong>——后面 render 阶段会用 <code>Asset.ref_in_body</code> 精确替换成 Hexo 的公开路径。这一招让 Source 不需要关心目标渠道的路径规则。</p>
+<h2 id="Render：Markdown-→-Hexo"><a href="#Render：Markdown-→-Hexo" class="headerlink" title="Render：Markdown → Hexo"></a>Render：Markdown → Hexo</h2><p><code>md_to_hexo.py</code> 做两件事：</p>
+<h3 id="1-生成-frontmatter"><a href="#1-生成-frontmatter" class="headerlink" title="1. 生成 frontmatter"></a>1. 生成 frontmatter</h3><p>按 Hexo 习惯输出标准 YAML：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">fm = &#123;</span><br><span class="line">    <span class="string">&quot;title&quot;</span>: article.title,</span><br><span class="line">    <span class="string">&quot;date&quot;</span>: date.strftime(<span class="string">&quot;%Y-%m-%d %H:%M:%S&quot;</span>),</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">if</span> article.tags:       fm[<span class="string">&quot;tags&quot;</span>] = article.tags</span><br><span class="line"><span class="keyword">if</span> article.categories: fm[<span class="string">&quot;categories&quot;</span>] = article.categories</span><br><span class="line"><span class="keyword">if</span> article.cover:      fm[<span class="string">&quot;cover&quot;</span>] = article.cover</span><br><span class="line">...</span><br><span class="line">text = yaml.safe_dump(fm, allow_unicode=<span class="literal">True</span>, sort_keys=<span class="literal">False</span>)</span><br></pre></td></tr></table></figure>
+
+<p><code>allow_unicode=True</code> 不能漏，否则中文 tag 会变 <code>\uXXXX</code>。</p>
+<h3 id="2-改写图片路径"><a href="#2-改写图片路径" class="headerlink" title="2. 改写图片路径"></a>2. 改写图片路径</h3><p>每张 asset 落到 <code>source/img/&lt;yyyy-mm&gt;/&lt;slug&gt;/NN-原文件名.ext</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">for</span> idx, asset <span class="keyword">in</span> <span class="built_in">enumerate</span>(article.assets):</span><br><span class="line">    dest = image_dir / slug / <span class="string">f&quot;<span class="subst">&#123;idx:02d&#125;</span>-<span class="subst">&#123;asset.local_path.stem&#125;</span><span class="subst">&#123;ext&#125;</span>&quot;</span></span><br><span class="line">    asset_dest[asset] = dest</span><br><span class="line">    public_url = <span class="string">&quot;/&quot;</span> + <span class="built_in">str</span>(dest.relative_to(repo_root / <span class="string">&quot;source&quot;</span>))</span><br><span class="line">    body = body.replace(<span class="string">f&quot;](<span class="subst">&#123;asset.ref_in_body&#125;</span>)&quot;</span>, <span class="string">f&quot;](<span class="subst">&#123;public_url&#125;</span>)&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>为什么按 <code>&lt;slug&gt;/</code> 再开一层子目录？避免不同文章里都叫 <code>cover.png</code> 的图互相覆盖。</p>
+<p>为什么用 <code>00-原文件名</code> 前缀？保留可读性的同时，让同名图也有唯一文件名。</p>
+<p>slug 的处理也有兜底：<code>python-slugify</code> 对纯中文返回空串，所以用”中文片段 + 文件路径 sha1 前 10 位”：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">cjk_part = <span class="string">&quot;&quot;</span>.join(_CJK_RE.findall(title))[:<span class="number">20</span>]</span><br><span class="line"><span class="keyword">return</span> <span class="string">f&quot;<span class="subst">&#123;cjk_part&#125;</span>-<span class="subst">&#123;digest&#125;</span>&quot;</span> <span class="keyword">if</span> cjk_part <span class="keyword">else</span> <span class="string">f&quot;post-<span class="subst">&#123;digest&#125;</span>&quot;</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="Hexo-target：写文件-git-push"><a href="#Hexo-target：写文件-git-push" class="headerlink" title="Hexo target：写文件 + git push"></a>Hexo target：写文件 + git push</h2><p>落盘的事不多：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">rendered.post_path.write_text(rendered.body, encoding=<span class="string">&quot;utf-8&quot;</span>)</span><br><span class="line">copy_assets(article, rendered)</span><br></pre></td></tr></table></figure>
+
+<p>然后用 <code>GitPython</code> 做提交：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">repo = git.Repo(repo_root)</span><br><span class="line">repo.git.add(*rel_paths)</span><br><span class="line">commit = repo.index.commit(msg)</span><br><span class="line">origin.push(refspec=<span class="string">f&quot;HEAD:<span class="subst">&#123;branch&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>提交信息模板可配（<code>commit_message_template: &quot;post: {title}&quot;</code>）。push 完剩下的就交给原本的 GitHub Actions：build → 推 <code>gh-pages</code> → Pages 上线。</p>
+<p><code>--dry-run</code> 时不写仓库，只把渲染产物落到 <code>publisher/out/</code>，便于先肉眼检查再正式发。<code>--no-push</code> 介于两者之间：写、提交但不 push，方便本地最后改一手再推。</p>
+<h2 id="幂等与状态"><a href="#幂等与状态" class="headerlink" title="幂等与状态"></a>幂等与状态</h2><p>为了避免重复发，用 SQLite 存”已发表”记录：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE TABLE</span> published (</span><br><span class="line">    source_id    TEXT <span class="keyword">NOT NULL</span>,</span><br><span class="line">    target       TEXT <span class="keyword">NOT NULL</span>,</span><br><span class="line">    slug         TEXT <span class="keyword">NOT NULL</span>,</span><br><span class="line">    title        TEXT,</span><br><span class="line">    published_at TEXT <span class="keyword">NOT NULL</span>,</span><br><span class="line">    <span class="keyword">PRIMARY KEY</span> (source_id, target)</span><br><span class="line">);</span><br></pre></td></tr></table></figure>
+
+<p><code>source_id</code> 是 <code>local:&lt;sha1&gt;</code> 或 <code>notion:&lt;page-id&gt;</code>。<code>target</code> 是 <code>hexo</code> 或 <code>wechat</code>。同篇文章发两个渠道独立计算。强制重发用 <code>--force</code>。</p>
+<p>Notion 那侧成功后会把 <code>Status</code> 字段更新为 <code>已发布</code> 做状态机闭环：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">notion.pages.update(</span><br><span class="line">    page_id=page_id,</span><br><span class="line">    properties=&#123;<span class="string">&quot;Status&quot;</span>: &#123;<span class="string">&quot;select&quot;</span>: &#123;<span class="string">&quot;name&quot;</span>: <span class="string">&quot;已发布&quot;</span>&#125;&#125;&#125;,</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>回写失败只打 warn 不阻塞主流程——博客已经推出去了，状态字段稍后人工改也无所谓。</p>
+<h2 id="CLI"><a href="#CLI" class="headerlink" title="CLI"></a>CLI</h2><p>用 <code>typer</code> 起手，三个命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment"># 看 Notion 里 &quot;待发布&quot; 列表</span></span><br><span class="line">publisher list --<span class="built_in">source</span> notion</span><br><span class="line"></span><br><span class="line"><span class="comment"># 本地 md → Hexo（最常用）</span></span><br><span class="line">publisher publish --<span class="built_in">source</span> <span class="built_in">local</span> --file path/to/article.md</span><br><span class="line"></span><br><span class="line"><span class="comment"># Notion 单页 / 全部待发布</span></span><br><span class="line">publisher publish --<span class="built_in">source</span> notion --page &lt;<span class="built_in">id</span>&gt;</span><br><span class="line">publisher publish --<span class="built_in">source</span> notion --all</span><br><span class="line"></span><br><span class="line"><span class="comment"># 调试 / 安全开关</span></span><br><span class="line">publisher publish --<span class="built_in">source</span> <span class="built_in">local</span> --file x.md --dry-run    <span class="comment"># 只渲染不推</span></span><br><span class="line">publisher publish --<span class="built_in">source</span> <span class="built_in">local</span> --file x.md --no-push    <span class="comment"># 提交不推</span></span><br><span class="line">publisher publish --<span class="built_in">source</span> notion --page &lt;<span class="built_in">id</span>&gt; --force     <span class="comment"># 已发的也重推</span></span><br></pre></td></tr></table></figure>
+
+<p><code>--dry-run</code> 在这种”写一次就改别人仓库 + push 到公网”的工具里是必须的，第一次跑、改 render 逻辑、加新块类型时都用得上。</p>
+<h2 id="留给-M3（公众号）的钩子"><a href="#留给-M3（公众号）的钩子" class="headerlink" title="留给 M3（公众号）的钩子"></a>留给 M3（公众号）的钩子</h2><p>接公众号时只动两层：</p>
+<ul>
+<li><code>targets/wechat.py</code>：access_token 缓存、永久素材上传、Markdown → 带 inline CSS 的 HTML、<code>/cgi-bin/draft/add</code></li>
+<li><code>render/md_to_wx_html.py</code>：Markdown 渲染 + <code>premailer</code> 内联 CSS</li>
+</ul>
+<p>CLI 那边 <code>--to hexo,wechat</code> 的入口形态已经留好。<code>Article</code> 模型不需要改——Hexo 用得到的字段，公众号草稿基本都用得到。</p>
+<p>短期内只发草稿、不直接走 <code>/freepublish/submit</code>，避免误发。</p>
+<h2 id="一些原则上的取舍"><a href="#一些原则上的取舍" class="headerlink" title="一些原则上的取舍"></a>一些原则上的取舍</h2><ul>
+<li><strong>不在源层做渠道相关的事</strong>。Notion 拉下来的图片不直接重写成 Hexo 路径，因为后面公众号要走自己的素材上传链路，提前重写会让流程多绕一层。</li>
+<li><strong><code>Article</code> 不可变信息越少越好</strong>。比如 <code>date</code> 来源放在 Source，渲染层不去猜。</li>
+<li><strong>配置和敏感信息分离</strong>。<code>config.yaml</code> 进 git，<code>.env</code> 不进。</li>
+<li><strong>失败要响但不要炸</strong>。Notion 回写、图片下载这类副作用环节失败只打 warn，主链路（推到 Hexo）不阻断。</li>
+</ul>
+<h2 id="下一步"><a href="#下一步" class="headerlink" title="下一步"></a>下一步</h2><ul>
+<li>M3：公众号草稿</li>
+<li>给 <code>Article</code> 加 <code>excerpt</code> 自动从首段截，公众号摘要用得到</li>
+<li>加 <code>publisher new</code> 命令，从 scaffold 生成草稿框架</li>
+<li>多文章批量发的进度条 &#x2F; 失败汇总</li>
+</ul>
+<p>整套代码在与博客仓库同级的 <code>publisher/</code> 目录里。下一篇会写公众号那段的具体踩坑。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://maimengshangren.github.io">Layne</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://maimengshangren.github.io/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/">https://maimengshangren.github.io/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://maimengshangren.github.io" target="_blank">Layne's Blog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Python/">Python</a><a class="post-meta__tags" href="/tags/Hexo/">Hexo</a><a class="post-meta__tags" href="/tags/Notion/">Notion</a><a class="post-meta__tags" href="/tags/%E5%B7%A5%E5%85%B7%E9%93%BE/">工具链</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,x,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related full-width" href="/2026/06/07/hello-world/" title="Hello World"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-right"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">Hello World</div></div><div class="info-2"><div class="info-item-1">Welcome to Hexo! This is your very first post. Check documentation for more info. If you get any problems when using Hexo, you can find the answer in troubleshooting or you can ask me on GitHub. Quick StartCreate a new post1$ hexo new &quot;My New Post&quot;  More info: Writing Run server1$ hexo server  More info: Server Generate static files1$ hexo generate  More info: Generating Deploy to remote sites1$ hexo deploy  More info: Deployment </div></div></div></a></nav></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">Layne</div><div class="author-info-description">个人博客 - 记录学习与生活</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">2</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">4</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/xxxxxx"><i class="fab fa-github"></i><span>Follow Me</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/maimengshangren" target="_blank" title="Github"><i class="fab fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:maimengshangren@gmail.com" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #4a7dbe;"></i></a></div></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">This is my Blog</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E8%87%AA%E5%B7%B1%E5%86%99"><span class="toc-number">1.</span> <span class="toc-text">为什么自己写</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%80%BB%E4%BD%93%E6%9E%B6%E6%9E%84"><span class="toc-number">2.</span> <span class="toc-text">总体架构</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B"><span class="toc-number">3.</span> <span class="toc-text">数据模型</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Local-source%EF%BC%9A%E6%9C%AC%E5%9C%B0-Markdown"><span class="toc-number">4.</span> <span class="toc-text">Local source：本地 Markdown</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Notion-source%EF%BC%9AM2-%E7%9A%84%E6%A0%B8%E5%BF%83"><span class="toc-number">5.</span> <span class="toc-text">Notion source：M2 的核心</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%AD%97%E6%AE%B5%E6%98%A0%E5%B0%84"><span class="toc-number">5.1.</span> <span class="toc-text">字段映射</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%9D%97%E9%80%92%E5%BD%92-%E5%88%86%E9%A1%B5"><span class="toc-number">5.2.</span> <span class="toc-text">块递归 + 分页</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%9D%97%E5%88%B0-Markdown"><span class="toc-number">5.3.</span> <span class="toc-text">块到 Markdown</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%9B%BE%E7%89%87%E4%B8%8B%E8%BD%BD"><span class="toc-number">5.4.</span> <span class="toc-text">图片下载</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Render%EF%BC%9AMarkdown-%E2%86%92-Hexo"><span class="toc-number">6.</span> <span class="toc-text">Render：Markdown → Hexo</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-%E7%94%9F%E6%88%90-frontmatter"><span class="toc-number">6.1.</span> <span class="toc-text">1. 生成 frontmatter</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-%E6%94%B9%E5%86%99%E5%9B%BE%E7%89%87%E8%B7%AF%E5%BE%84"><span class="toc-number">6.2.</span> <span class="toc-text">2. 改写图片路径</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Hexo-target%EF%BC%9A%E5%86%99%E6%96%87%E4%BB%B6-git-push"><span class="toc-number">7.</span> <span class="toc-text">Hexo target：写文件 + git push</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%B9%82%E7%AD%89%E4%B8%8E%E7%8A%B6%E6%80%81"><span class="toc-number">8.</span> <span class="toc-text">幂等与状态</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#CLI"><span class="toc-number">9.</span> <span class="toc-text">CLI</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%95%99%E7%BB%99-M3%EF%BC%88%E5%85%AC%E4%BC%97%E5%8F%B7%EF%BC%89%E7%9A%84%E9%92%A9%E5%AD%90"><span class="toc-number">10.</span> <span class="toc-text">留给 M3（公众号）的钩子</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E4%BA%9B%E5%8E%9F%E5%88%99%E4%B8%8A%E7%9A%84%E5%8F%96%E8%88%8D"><span class="toc-number">11.</span> <span class="toc-text">一些原则上的取舍</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%8B%E4%B8%80%E6%AD%A5"><span class="toc-number">12.</span> <span class="toc-text">下一步</span></a></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/" title="自建博客发布器 publisher 的实现思路">自建博客发布器 publisher 的实现思路</a><time datetime="2026-06-07T12:00:00.000Z" title="发表于 2026-06-07 20:00:00">2026-06-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/07/hello-world/" title="Hello World">Hello World</a><time datetime="2026-06-07T11:46:14.662Z" title="发表于 2026-06-07 19:46:14">2026-06-07</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By Layne</span><span class="framework-info"><span>框架 </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo 8.1.2</a><span class="footer-separator">|</span><span>主题 </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly 5.5.4</a></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script></div></body></html>
