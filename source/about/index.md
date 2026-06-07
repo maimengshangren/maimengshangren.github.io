@@ -3,11 +3,11 @@ title: 关于我
 date: 2026-06-07 17:01:13
 ---
 
-## 郭浩东 · Layne
+## Layne
 
-哈尔滨工业大学 电子信息硕士在读，关注 Java 后端 与 AI 工程方向，喜欢把复杂的链路拆开、抹平、再串起来。
+电子信息硕士在读，关注 Java 后端 与 AI 工程方向，喜欢把复杂的链路拆开、抹平、再串起来。
 
-- 邮箱：[2971571896@qq.com](mailto:2971571896@qq.com) · [maimengshangren@gmail.com](mailto:maimengshangren@gmail.com)
+- 邮箱：[2971571896@qq.com](mailto:2971571896@qq.com)
 - GitHub：[maimengshangren](https://github.com/maimengshangren)
 
 ---
