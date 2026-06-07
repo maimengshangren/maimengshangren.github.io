@@ -1,0 +1,316 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API | Layne's Blog</title><meta name="author" content="Layne"><meta name="copyright" content="Layne"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="publisher 桌面化第一阶段（D1）的实现记录——为什么走 Tauri + Python sidecar、API 的形状如何与 7 条 MVP 对齐，以及发布进度用 job + SSE 模型的几个关键技术细节。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API">
+<meta property="og:url" content="https://maimengshangren.github.io/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/index.html">
+<meta property="og:site_name" content="Layne&#39;s Blog">
+<meta property="og:description" content="publisher 桌面化第一阶段（D1）的实现记录——为什么走 Tauri + Python sidecar、API 的形状如何与 7 条 MVP 对齐，以及发布进度用 job + SSE 模型的几个关键技术细节。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://maimengshangren.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-06-07T13:00:00.000Z">
+<meta property="article:modified_time" content="2026-06-07T16:16:19.723Z">
+<meta property="article:author" content="Layne">
+<meta property="article:tag" content="FastAPI">
+<meta property="article:tag" content="Python">
+<meta property="article:tag" content="SSE">
+<meta property="article:tag" content="Tauri">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://maimengshangren.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API",
+  "url": "https://maimengshangren.github.io/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/",
+  "image": "https://maimengshangren.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-06-07T13:00:00.000Z",
+  "dateModified": "2026-06-07T16:16:19.723Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Layne",
+      "url": "https://maimengshangren.github.io"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://maimengshangren.github.io/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css?v=5.5.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.1.0/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: undefined,
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":false},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.13.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 8.1.2"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">3</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">7</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><span class="site-name">Layne's Blog</span></a><a class="nav-page-title" href="/"><span class="site-name">为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  返回首页</span></span></a></span><div id="menus"><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2026-06-07T13:00:00.000Z" title="发表于 2026-06-07 21:00:00">2026-06-07</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2026-06-07T16:16:19.723Z" title="更新于 2026-06-08 00:16:19">2026-06-08</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%8A%80%E6%9C%AF/">技术</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">浏览量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><p><a href="/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/">上一篇</a>我把 publisher 这个发布器的 CLI 版本做出来了：本地 Markdown 或 Notion 文章一键发到 Hexo 博客。CLI 自己用是够了，但要把”草稿箱、已发管理、撤回、站点风格编辑”这些可视化需求落地，得加个桌面 GUI。</p>
+<p>这一篇记录 D1 阶段：<strong>把 CLI 的核心能力包成 HTTP API</strong>，给后续 Tauri 前端用。整篇都是技术细节，不长。</p>
+<h2 id="形态决定：Tauri-Python-sidecar"><a href="#形态决定：Tauri-Python-sidecar" class="headerlink" title="形态决定：Tauri + Python sidecar"></a>形态决定：Tauri + Python sidecar</h2><p>技术栈在动手之前先拍板。备选三个：</p>
+<table>
+<thead>
+<tr>
+<th>方案</th>
+<th>优点</th>
+<th>缺点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Electron + Node 重写</td>
+<td>生态熟</td>
+<td>包大、内存高，还得把 publisher 的 Python 逻辑全翻译一遍</td>
+</tr>
+<tr>
+<td>纯 Rust + Tauri</td>
+<td>包最小、最快</td>
+<td>现有 Python 代码作废</td>
+</tr>
+<tr>
+<td><strong>Tauri + Python sidecar</strong></td>
+<td>包小、复用 publisher 包、桌面原生体验</td>
+<td>需要让 Tauri 启动时拉起 Python 子进程，端到端调试稍麻烦</td>
+</tr>
+</tbody></table>
+<p>选第三个。Tauri 主进程（Rust + WebView）只做壳子，Python 作为 sidecar 跑一个本地 HTTP 服务，前端 fetch 调它。最终 <code>.app</code> 里就是 Tauri 二进制 + PyInstaller 打包的 Python 子进程。</p>
+<p>工程结构是这样：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">publisher/</span><br><span class="line">├── src/publisher/          # 已有的 CLI / 核心</span><br><span class="line">│   └── api/                # 新增的 FastAPI 层</span><br><span class="line">└── desktop/                # 下一阶段会出现的 Tauri 工程</span><br><span class="line">    ├── src-tauri/</span><br><span class="line">    └── src/                # 前端</span><br></pre></td></tr></table></figure>
+
+<p>API 层的定位是个<strong>适配器</strong>——它不实现业务，只把已有的 publisher 模块（Source &#x2F; Render &#x2F; Target &#x2F; State）包成 HTTP 接口。</p>
+<h2 id="接口形状：从-7-条-MVP-倒推"><a href="#接口形状：从-7-条-MVP-倒推" class="headerlink" title="接口形状：从 7 条 MVP 倒推"></a>接口形状：从 7 条 MVP 倒推</h2><p>之前确定的 7 条 MVP 是：</p>
+<ol>
+<li>文章列表（本地 + Notion + 已发）+ 状态&#x2F;来源徽章</li>
+<li>在 VS Code 中打开 + 文件监听</li>
+<li>发布前预检</li>
+<li>Dry-run 预览</li>
+<li>发布进度（写 → 拷图 → commit → push → CI）</li>
+<li>撤回（归档 + 删 + push）</li>
+<li>设置</li>
+</ol>
+<p>每条 MVP 对应到一组路由：</p>
+<table>
+<thead>
+<tr>
+<th>MVP</th>
+<th>路由</th>
+<th>备注</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>GET /articles/{local,notion,published}</code></td>
+<td>三个数据源各一个端点，前端各自缓存、按需刷新</td>
+</tr>
+<tr>
+<td>2</td>
+<td>不需要后端</td>
+<td>“在 VS Code 中打开” 是 Tauri 侧 <code>Command::new(&quot;code&quot;)</code>，文件监听用 <code>notify</code> crate</td>
+</tr>
+<tr>
+<td>3、4</td>
+<td><code>POST /publish/dry-run</code></td>
+<td>同步返回 frontmatter、落点、commit message、资产数</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>POST /publish</code> + <code>GET /publish/jobs/{id}/events</code>（SSE）</td>
+<td>job 模型 + 进度流</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>POST /withdraw</code></td>
+<td>同步：archive + 删 + commit + push</td>
+</tr>
+<tr>
+<td>7</td>
+<td>不需要后端</td>
+<td>设置直接读写 <code>config.yaml</code> 和系统 Keychain</td>
+</tr>
+</tbody></table>
+<p>还有支撑型路由：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">GET /healthz                 # sidecar 存活探测，Tauri 启动时 poll</span><br><span class="line">GET /status/repo             # 博客仓库 git 状态（dirty/ahead/behind）</span><br><span class="line">GET /status/ci?limit=5       # GitHub Actions 最近运行</span><br><span class="line">GET /status/notion           # Notion 配置是否就绪</span><br><span class="line">GET /preview/status          # D4 的占位</span><br></pre></td></tr></table></figure>
+
+<h2 id="关键技术决策：发布进度的-job-SSE-模型"><a href="#关键技术决策：发布进度的-job-SSE-模型" class="headerlink" title="关键技术决策：发布进度的 job + SSE 模型"></a>关键技术决策：发布进度的 job + SSE 模型</h2><p>文章列表、撤回、状态都是请求-响应一发了之，没什么好说的。<strong>发布这条路是异步的</strong>：写文件、拷图、commit、push 几秒到几十秒，需要把每一步进度推给前端。这块设计要稍微讲讲。</p>
+<h3 id="为什么不用-WebSocket"><a href="#为什么不用-WebSocket" class="headerlink" title="为什么不用 WebSocket"></a>为什么不用 WebSocket</h3><p>WebSocket 是双向，我们这里只需要服务端 → 前端推；用 SSE（Server-Sent Events）足够，浏览器原生 <code>EventSource</code> API 直接接，自动重连，不需要前端引第三方库。Tauri 的 webview 一样支持。</p>
+<h3 id="任务对象与事件队列"><a href="#任务对象与事件队列" class="headerlink" title="任务对象与事件队列"></a>任务对象与事件队列</h3><p>每次 <code>POST /publish</code> 创建一个 <code>Job</code>，给一个 12 位的 id：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@dataclass</span></span><br><span class="line"><span class="keyword">class</span> <span class="title class_">Job</span>:</span><br><span class="line">    job_id: <span class="built_in">str</span></span><br><span class="line">    kind: <span class="built_in">str</span>             <span class="comment"># publish | withdraw</span></span><br><span class="line">    status: <span class="built_in">str</span>           <span class="comment"># pending | running | success | failed</span></span><br><span class="line">    events: <span class="built_in">list</span>[JobEvent]   <span class="comment"># 缓冲：方便晚订阅者 replay</span></span><br><span class="line">    result: <span class="type">Optional</span>[<span class="built_in">dict</span>]</span><br><span class="line">    error: <span class="type">Optional</span>[<span class="built_in">str</span>]</span><br><span class="line">    loop: <span class="type">Optional</span>[asyncio.AbstractEventLoop]</span><br><span class="line">    queue: <span class="type">Optional</span>[asyncio.Queue]  <span class="comment"># 给 SSE handler 用</span></span><br></pre></td></tr></table></figure>
+
+<p>注意有两套数据结构记事件：</p>
+<ul>
+<li><code>events: list</code> —— 一直缓冲，任何时刻拿来 replay</li>
+<li><code>queue: asyncio.Queue</code> —— SSE handler 从这里阻塞读，每条事件实时推给客户端</li>
+</ul>
+<p><code>queue</code> 是懒创建的——只有当<strong>真的有人来订阅 SSE 时</strong>才在那个连接所在的 event loop 上创建。这避免了 worker 启动时还不知道哪个 loop 上会消费的尴尬。</p>
+<h3 id="跨线程把事件送回事件循环"><a href="#跨线程把事件送回事件循环" class="headerlink" title="跨线程把事件送回事件循环"></a>跨线程把事件送回事件循环</h3><p>worker 跑在 <code>run_in_executor</code> 的线程池里（同步代码，复用 publish_to_hexo）。事件回调要把进度从<strong>工作线程</strong>送回<strong>主 event loop</strong>。这一步做错就是死锁或数据丢：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">push</span>(<span class="params">self, ev: JobEvent</span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    <span class="variable language_">self</span>.events.append(ev)                              <span class="comment"># 缓冲是同步的，OK</span></span><br><span class="line">    <span class="keyword">if</span> <span class="variable language_">self</span>.queue <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span> <span class="keyword">and</span> <span class="variable language_">self</span>.loop <span class="keyword">is</span> <span class="keyword">not</span> <span class="literal">None</span>:</span><br><span class="line">        <span class="comment"># 这里是关键：不能直接 self.queue.put_nowait()</span></span><br><span class="line">        <span class="comment"># 因为我们在 worker 线程，queue 绑在主 loop 上</span></span><br><span class="line">        <span class="variable language_">self</span>.loop.call_soon_threadsafe(<span class="variable language_">self</span>.queue.put_nowait, ev)</span><br></pre></td></tr></table></figure>
+
+<p><code>call_soon_threadsafe</code> 是 asyncio 给跨线程通信的官方接口，它会把回调投到目标 loop 的就绪队列，由 loop 自己来执行。错用 <code>asyncio.run_coroutine_threadsafe</code> 也行但更重。</p>
+<h3 id="晚订阅者-replay"><a href="#晚订阅者-replay" class="headerlink" title="晚订阅者 replay"></a>晚订阅者 replay</h3><p>如果 SSE 客户端连得慢（前端先 POST 拿到 job_id，再发 GET 订阅 events 的话有时间窗），前几条事件已经发生了。处理方式是 attach 时把 <code>events</code> 里已缓冲的全部一次性推进 <code>queue</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">attach_queue</span>(<span class="params">self, job_id: <span class="built_in">str</span></span>) -&gt; <span class="type">Optional</span>[Job]:</span><br><span class="line">    job = <span class="variable language_">self</span>.get(job_id)</span><br><span class="line">    <span class="keyword">if</span> job <span class="keyword">is</span> <span class="literal">None</span>: <span class="keyword">return</span> <span class="literal">None</span></span><br><span class="line">    <span class="keyword">if</span> job.queue <span class="keyword">is</span> <span class="literal">None</span>:</span><br><span class="line">        job.queue = asyncio.Queue()</span><br><span class="line">        job.loop = asyncio.get_running_loop()</span><br><span class="line">        <span class="keyword">for</span> ev <span class="keyword">in</span> job.events:           <span class="comment"># 历史事件全部 replay</span></span><br><span class="line">            job.queue.put_nowait(ev)</span><br><span class="line">    <span class="keyword">return</span> job</span><br></pre></td></tr></table></figure>
+
+<p>这一招让前端不必担心订阅时机——晚连也能看到完整流。</p>
+<h3 id="心跳"><a href="#心跳" class="headerlink" title="心跳"></a>心跳</h3><p>SSE 长连接经过任何中间件都会担心被超时关掉。我在生成器里加了 30 秒超时 ping：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">async</span> <span class="keyword">def</span> <span class="title function_">gen</span>():</span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        <span class="keyword">try</span>:</span><br><span class="line">            ev = <span class="keyword">await</span> asyncio.wait_for(job.queue.get(), timeout=<span class="number">30.0</span>)</span><br><span class="line">        <span class="keyword">except</span> asyncio.TimeoutError:</span><br><span class="line">            <span class="keyword">yield</span> &#123;<span class="string">&quot;event&quot;</span>: <span class="string">&quot;ping&quot;</span>, <span class="string">&quot;data&quot;</span>: <span class="string">&quot;&#123;&#125;&quot;</span>&#125;</span><br><span class="line">            <span class="keyword">if</span> job.status <span class="keyword">in</span> (<span class="string">&quot;success&quot;</span>, <span class="string">&quot;failed&quot;</span>): <span class="keyword">return</span></span><br><span class="line">            <span class="keyword">continue</span></span><br><span class="line">        <span class="keyword">yield</span> &#123;<span class="string">&quot;event&quot;</span>: ev.step, <span class="string">&quot;data&quot;</span>: json.dumps(ev.to_dict(), ensure_ascii=<span class="literal">False</span>)&#125;</span><br><span class="line">        <span class="keyword">if</span> ev.level <span class="keyword">in</span> (<span class="string">&quot;done&quot;</span>, <span class="string">&quot;error&quot;</span>): <span class="keyword">return</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="复用-CLI-核心：progress-回调"><a href="#复用-CLI-核心：progress-回调" class="headerlink" title="复用 CLI 核心：progress 回调"></a>复用 CLI 核心：progress 回调</h2><p>我不想让 API 这层自己再写一份”写文件 → 拷图 → commit → push”的流水。原本的 <code>publish_to_hexo</code> 已经做了这些，CLI 里就在用。怎么让 API 拿到细粒度进度？给函数加一个可选回调：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">ProgressCb = <span class="type">Optional</span>[<span class="type">Callable</span>[[<span class="built_in">str</span>, <span class="built_in">str</span>], <span class="literal">None</span>]]</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">publish_to_hexo</span>(<span class="params">article, cfg, repo_root, *, dry_run=<span class="literal">False</span>, push=<span class="literal">True</span>,</span></span><br><span class="line"><span class="params">                    progress: ProgressCb = <span class="literal">None</span></span>) -&gt; PublishResult:</span><br><span class="line">    _emit(progress, <span class="string">&quot;render&quot;</span>, <span class="string">f&quot;渲染：<span class="subst">&#123;article.title&#125;</span>&quot;</span>)</span><br><span class="line">    rendered = render(article, cfg, repo_root)</span><br><span class="line">    ...</span><br><span class="line">    _emit(progress, <span class="string">&quot;write&quot;</span>, <span class="string">f&quot;写入 <span class="subst">&#123;rendered.post_path&#125;</span>&quot;</span>)</span><br><span class="line">    ...</span><br><span class="line">    _emit(progress, <span class="string">&quot;copy-assets&quot;</span>, <span class="string">f&quot;已拷贝 <span class="subst">&#123;<span class="built_in">len</span>(article.assets)&#125;</span> 张图片&quot;</span>)</span><br><span class="line">    ...</span><br><span class="line">    _emit(progress, <span class="string">&quot;commit&quot;</span>, <span class="string">f&quot;<span class="subst">&#123;commit.hexsha[:<span class="number">8</span>]&#125;</span> <span class="subst">&#123;msg&#125;</span>&quot;</span>)</span><br><span class="line">    ...</span><br><span class="line">    _emit(progress, <span class="string">&quot;push&quot;</span>, <span class="string">f&quot;已推送到 origin/<span class="subst">&#123;cfg.git.branch&#125;</span>&quot;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>CLI 不传 <code>progress</code>，行为完全不变；API 这边传一个把事件 push 进 <code>Job</code> 的闭包：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">cb</span>(<span class="params">step: <span class="built_in">str</span>, message: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    job.push(JobEvent(step=step, message=message))</span><br><span class="line"></span><br><span class="line">result = publish_to_hexo(article, cfg.hexo, repo_root,</span><br><span class="line">                         dry_run=<span class="literal">False</span>, push=req.push, progress=cb)</span><br></pre></td></tr></table></figure>
+
+<p>一份核心，两种入口。这是这次 D1 最让我自己满意的小决定——它把”加 GUI”的成本压在了 API 适配层，<strong>核心模块零迁就</strong>。</p>
+<h2 id="状态机的两个新方法"><a href="#状态机的两个新方法" class="headerlink" title="状态机的两个新方法"></a>状态机的两个新方法</h2><p>撤回需要从已发表里删一条记录，所以 <code>StateStore</code> 加了 <code>list_published</code> 和 <code>delete_published</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">list_published</span>(<span class="params">self, target=<span class="literal">None</span></span>) -&gt; <span class="built_in">list</span>[<span class="built_in">dict</span>]:</span><br><span class="line">    sql = <span class="string">&quot;SELECT source_id, target, slug, title, published_at FROM published&quot;</span></span><br><span class="line">    args = ()</span><br><span class="line">    <span class="keyword">if</span> target:</span><br><span class="line">        sql += <span class="string">&quot; WHERE target=?&quot;</span></span><br><span class="line">        args = (target,)</span><br><span class="line">    sql += <span class="string">&quot; ORDER BY published_at DESC&quot;</span></span><br><span class="line">    ...</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">delete_published</span>(<span class="params">self, source_id: <span class="built_in">str</span>, target: <span class="built_in">str</span></span>) -&gt; <span class="literal">None</span>:</span><br><span class="line">    ...</span><br></pre></td></tr></table></figure>
+
+<p>撤回流程：</p>
+<ol>
+<li><code>archive/&lt;时间戳&gt;/</code> 拷一份本地备份</li>
+<li>从博客仓库删源文件</li>
+<li><code>git commit -m &quot;revert: withdraw &lt;slug&gt;&quot;</code> + push</li>
+<li>从 state DB 里删记录</li>
+</ol>
+<p>四步全部在 <code>POST /withdraw</code> 里同步完成。归档先做、push 最后做——这个顺序保证即使中途崩了也至少有本地副本，下次能从 archive 恢复。</p>
+<h2 id="几个踩到的小坑"><a href="#几个踩到的小坑" class="headerlink" title="几个踩到的小坑"></a>几个踩到的小坑</h2><h3 id="1-仓库名含点的-origin-URL-正则"><a href="#1-仓库名含点的-origin-URL-正则" class="headerlink" title="1. 仓库名含点的 origin URL 正则"></a>1. 仓库名含点的 origin URL 正则</h3><p>我的博客仓库叫 <code>maimengshangren.github.io</code>——repo 名本身含点，最初的正则 <code>[^/.]+</code> 把它截在 <code>maimengshangren</code> 就停了。改成：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">cleaned = url.rstrip(<span class="string">&quot;/&quot;</span>)</span><br><span class="line"><span class="keyword">if</span> cleaned.endswith(<span class="string">&quot;.git&quot;</span>):</span><br><span class="line">    cleaned = cleaned[:-<span class="number">4</span>]</span><br><span class="line">m = re.search(<span class="string">r&quot;github\.com[:/]([^/]+)/([^/]+)$&quot;</span>, cleaned)</span><br></pre></td></tr></table></figure>
+
+<p>只剥 <code>.git</code> 后缀，其余允许任何字符。</p>
+<h3 id="2-GitHub-Actions-API-的匿名-403"><a href="#2-GitHub-Actions-API-的匿名-403" class="headerlink" title="2. GitHub Actions API 的匿名 403"></a>2. GitHub Actions API 的匿名 403</h3><p><code>status/ci</code> 用的是 <code>https://api.github.com/repos/&lt;owner&gt;/&lt;repo&gt;/actions/runs</code>，不带 token 时 GitHub 给的匿名速率限制极低，本机调几次就 403。生产里建议 <code>.env</code> 里加 <code>GITHUB_TOKEN</code>，API 会自动带上：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">token = os.environ.get(<span class="string">&quot;GITHUB_TOKEN&quot;</span>)</span><br><span class="line"><span class="keyword">if</span> token:</span><br><span class="line">    headers[<span class="string">&quot;Authorization&quot;</span>] = <span class="string">f&quot;Bearer <span class="subst">&#123;token&#125;</span>&quot;</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="3-CORS"><a href="#3-CORS" class="headerlink" title="3. CORS"></a>3. CORS</h3><p>sidecar 监听 127.0.0.1，开发时前端跑在 Vite dev server 上是 <code>http://localhost:5173</code>，两个 origin。本来 CORS 是个安全话题，但局限在 loopback 的进程里放开全部 origin 完全可以接受：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">app.add_middleware(</span><br><span class="line">    CORSMiddleware,</span><br><span class="line">    allow_origins=[<span class="string">&quot;*&quot;</span>],</span><br><span class="line">    allow_methods=[<span class="string">&quot;*&quot;</span>],</span><br><span class="line">    allow_headers=[<span class="string">&quot;*&quot;</span>],</span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<h3 id="4-preview-接口先占位"><a href="#4-preview-接口先占位" class="headerlink" title="4. preview 接口先占位"></a>4. preview 接口先占位</h3><p><code>POST /preview/{start,stop,restart}</code> 直接 <code>raise HTTPException(501)</code>——前端可以早早把按钮接好，等 D4 真做 hexo s 进程管理时只改 handler 不改路由。</p>
+<h2 id="最终目录"><a href="#最终目录" class="headerlink" title="最终目录"></a>最终目录</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">src/publisher/api/</span><br><span class="line">├── app.py            # FastAPI 工厂 + run() 入口</span><br><span class="line">├── jobs.py           # 内存 job 注册表 + 跨线程 SSE 队列</span><br><span class="line">└── routes/</span><br><span class="line">    ├── articles.py   # /articles/&#123;local,notion,published&#125;</span><br><span class="line">    ├── publish.py    # /publish, /publish/jobs/&#123;id&#125;, /publish/jobs/&#123;id&#125;/events</span><br><span class="line">    ├── withdraw.py   # /withdraw</span><br><span class="line">    ├── status.py     # /status/&#123;repo,ci,notion&#125;</span><br><span class="line">    └── preview.py    # 501 占位</span><br></pre></td></tr></table></figure>
+
+<p>启动：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">publisher-api --port 8765</span><br></pre></td></tr></table></figure>
+
+<p><code>pyproject.toml</code> 那边把 <code>publisher-api = &quot;publisher.api.app:run&quot;</code> 注册成 console script，PyInstaller 后还是这个入口。</p>
+<h2 id="一些不写在代码里的原则"><a href="#一些不写在代码里的原则" class="headerlink" title="一些不写在代码里的原则"></a>一些不写在代码里的原则</h2><p>D1 推进时反复用到的几条心法：</p>
+<ul>
+<li><strong>不破坏 CLI</strong>：CLI 是这个工具的第一形态，加 GUI 不该让 CLI 体验劣化。所以 <code>publish_to_hexo</code> 的 <code>progress</code> 参数是可选的，所有 API 改动都在 <code>publisher/api/</code> 这个新包里。</li>
+<li><strong>同步 vs 异步看场景</strong>：dry-run 几十毫秒能返回，就同步 JSON；publish 秒级，必须异步 + 流式。一律异步会让简单事情复杂化。</li>
+<li><strong>状态留在最该留的地方</strong>：job 存内存（sidecar 单进程，重启清空也无所谓），published 存 SQLite（要跨进程持久化），Notion token 之后存 Keychain（不能进 git）。</li>
+<li><strong>占位 501 比空路由好</strong>：路由形状已经定了的就先建好，handler 写 501 而不是不存在。这样前端可以提前 wire 上按钮，看到 501 比 404 信息量大很多。</li>
+</ul>
+<h2 id="下一步"><a href="#下一步" class="headerlink" title="下一步"></a>下一步</h2><p>D2 是 Tauri 工程脚手架 + sidecar 启停管理 + Settings + Articles Tab 的只读列表。预计是 D1 三倍工作量，主要在前端那一坨。代码会继续放在与博客同级的 <code>publisher/</code> 目录里，且这一篇之后会建好独立的 GitHub 仓库做版本管理。</p>
+<p>下一篇见。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://maimengshangren.github.io">Layne</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://maimengshangren.github.io/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/">https://maimengshangren.github.io/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://maimengshangren.github.io" target="_blank">Layne's Blog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Python/">Python</a><a class="post-meta__tags" href="/tags/FastAPI/">FastAPI</a><a class="post-meta__tags" href="/tags/SSE/">SSE</a><a class="post-meta__tags" href="/tags/Tauri/">Tauri</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,x,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related" href="/2026/06/07/hello-world/" title="Hello World"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">Hello World</div></div><div class="info-2"><div class="info-item-1">Welcome to Hexo! This is your very first post. Check documentation for more info. If you get any problems when using Hexo, you can find the answer in troubleshooting or you can ask me on GitHub. Quick StartCreate a new post1$ hexo new &quot;My New Post&quot;  More info: Writing Run server1$ hexo server  More info: Server Generate static files1$ hexo generate  More info: Generating Deploy to remote sites1$ hexo deploy  More info: Deployment </div></div></div></a><a class="pagination-related" href="/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/" title="自建博客发布器 publisher 的实现思路"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-right"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">自建博客发布器 publisher 的实现思路</div></div><div class="info-2"><div class="info-item-1">为什么自己写我的博客是 Hexo + Butterfly 主题，托管在 GitHub Pages，push 到 main 由 GitHub Actions 自动 build 然后发 gh-pages。链路本身已经很顺，但写作侧仍然碎：  草稿可能在 Notion 里，也可能在本地 *.md 里，每次手动复制粘贴、改 frontmatter、传图片 同一篇要发到公众号，又得重排版、再传一遍图 没有”已发”状态机，重复发布的概率不小  于是写一个发布器 publisher，跟博客仓库同级目录，定位是单人写作的发布前置层：把”内容来自哪里”和”要发到哪里”解耦，自己只关心写作本身。 本文记录这个工具的实现思路。M1（本地 → Hexo）和 M2（Notion → Hexo）已经完成，M3（公众号草稿）排在后面。 总体架构核心是三段式： 123456┌─────────────┐      ┌──────────────┐      ┌─────────────────┐│ Source      │      │ Article      │      │ Target        ...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/" title="自建博客发布器 publisher 的实现思路"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-06-07</div><div class="info-item-2">自建博客发布器 publisher 的实现思路</div></div><div class="info-2"><div class="info-item-1">为什么自己写我的博客是 Hexo + Butterfly 主题，托管在 GitHub Pages，push 到 main 由 GitHub Actions 自动 build 然后发 gh-pages。链路本身已经很顺，但写作侧仍然碎：  草稿可能在 Notion 里，也可能在本地 *.md 里，每次手动复制粘贴、改 frontmatter、传图片 同一篇要发到公众号，又得重排版、再传一遍图 没有”已发”状态机，重复发布的概率不小  于是写一个发布器 publisher，跟博客仓库同级目录，定位是单人写作的发布前置层：把”内容来自哪里”和”要发到哪里”解耦，自己只关心写作本身。 本文记录这个工具的实现思路。M1（本地 → Hexo）和 M2（Notion → Hexo）已经完成，M3（公众号草稿）排在后面。 总体架构核心是三段式： 123456┌─────────────┐      ┌──────────────┐      ┌─────────────────┐│ Source      │      │ Article      │      │ Target        ...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">Layne</div><div class="author-info-description">个人博客 - 记录学习与生活</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">3</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">7</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/xxxxxx"><i class="fab fa-github"></i><span>Follow Me</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/maimengshangren" target="_blank" title="Github"><i class="fab fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:maimengshangren@gmail.com" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #4a7dbe;"></i></a></div></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">This is my Blog</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%BD%A2%E6%80%81%E5%86%B3%E5%AE%9A%EF%BC%9ATauri-Python-sidecar"><span class="toc-number">1.</span> <span class="toc-text">形态决定：Tauri + Python sidecar</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%8E%A5%E5%8F%A3%E5%BD%A2%E7%8A%B6%EF%BC%9A%E4%BB%8E-7-%E6%9D%A1-MVP-%E5%80%92%E6%8E%A8"><span class="toc-number">2.</span> <span class="toc-text">接口形状：从 7 条 MVP 倒推</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%B3%E9%94%AE%E6%8A%80%E6%9C%AF%E5%86%B3%E7%AD%96%EF%BC%9A%E5%8F%91%E5%B8%83%E8%BF%9B%E5%BA%A6%E7%9A%84-job-SSE-%E6%A8%A1%E5%9E%8B"><span class="toc-number">3.</span> <span class="toc-text">关键技术决策：发布进度的 job + SSE 模型</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E7%94%A8-WebSocket"><span class="toc-number">3.1.</span> <span class="toc-text">为什么不用 WebSocket</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BB%BB%E5%8A%A1%E5%AF%B9%E8%B1%A1%E4%B8%8E%E4%BA%8B%E4%BB%B6%E9%98%9F%E5%88%97"><span class="toc-number">3.2.</span> <span class="toc-text">任务对象与事件队列</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%B7%A8%E7%BA%BF%E7%A8%8B%E6%8A%8A%E4%BA%8B%E4%BB%B6%E9%80%81%E5%9B%9E%E4%BA%8B%E4%BB%B6%E5%BE%AA%E7%8E%AF"><span class="toc-number">3.3.</span> <span class="toc-text">跨线程把事件送回事件循环</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%99%9A%E8%AE%A2%E9%98%85%E8%80%85-replay"><span class="toc-number">3.4.</span> <span class="toc-text">晚订阅者 replay</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%BF%83%E8%B7%B3"><span class="toc-number">3.5.</span> <span class="toc-text">心跳</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%A4%8D%E7%94%A8-CLI-%E6%A0%B8%E5%BF%83%EF%BC%9Aprogress-%E5%9B%9E%E8%B0%83"><span class="toc-number">4.</span> <span class="toc-text">复用 CLI 核心：progress 回调</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%8A%B6%E6%80%81%E6%9C%BA%E7%9A%84%E4%B8%A4%E4%B8%AA%E6%96%B0%E6%96%B9%E6%B3%95"><span class="toc-number">5.</span> <span class="toc-text">状态机的两个新方法</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%87%A0%E4%B8%AA%E8%B8%A9%E5%88%B0%E7%9A%84%E5%B0%8F%E5%9D%91"><span class="toc-number">6.</span> <span class="toc-text">几个踩到的小坑</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#1-%E4%BB%93%E5%BA%93%E5%90%8D%E5%90%AB%E7%82%B9%E7%9A%84-origin-URL-%E6%AD%A3%E5%88%99"><span class="toc-number">6.1.</span> <span class="toc-text">1. 仓库名含点的 origin URL 正则</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#2-GitHub-Actions-API-%E7%9A%84%E5%8C%BF%E5%90%8D-403"><span class="toc-number">6.2.</span> <span class="toc-text">2. GitHub Actions API 的匿名 403</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-CORS"><span class="toc-number">6.3.</span> <span class="toc-text">3. CORS</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#4-preview-%E6%8E%A5%E5%8F%A3%E5%85%88%E5%8D%A0%E4%BD%8D"><span class="toc-number">6.4.</span> <span class="toc-text">4. preview 接口先占位</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%9C%80%E7%BB%88%E7%9B%AE%E5%BD%95"><span class="toc-number">7.</span> <span class="toc-text">最终目录</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E4%BA%9B%E4%B8%8D%E5%86%99%E5%9C%A8%E4%BB%A3%E7%A0%81%E9%87%8C%E7%9A%84%E5%8E%9F%E5%88%99"><span class="toc-number">8.</span> <span class="toc-text">一些不写在代码里的原则</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%8B%E4%B8%80%E6%AD%A5"><span class="toc-number">9.</span> <span class="toc-text">下一步</span></a></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/07/hello-world/" title="Hello World">Hello World</a><time datetime="2026-06-07T16:16:19.723Z" title="发表于 2026-06-08 00:16:19">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/" title="为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API">为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API</a><time datetime="2026-06-07T13:00:00.000Z" title="发表于 2026-06-07 21:00:00">2026-06-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/" title="自建博客发布器 publisher 的实现思路">自建博客发布器 publisher 的实现思路</a><time datetime="2026-06-07T12:00:00.000Z" title="发表于 2026-06-07 20:00:00">2026-06-07</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By Layne</span><span class="framework-info"><span>框架 </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo 8.1.2</a><span class="footer-separator">|</span><span>主题 </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly 5.5.4</a></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script></div></body></html>
