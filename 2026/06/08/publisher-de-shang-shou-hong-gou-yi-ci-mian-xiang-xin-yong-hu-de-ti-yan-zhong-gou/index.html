@@ -1,0 +1,319 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>publisher 的上手鸿沟：一次面向新用户的体验重构 | Layne's Blog</title><meta name="author" content="Layne"><meta name="copyright" content="Layne"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="自己写的工具一开始只对自己友好。把它从&quot;我用着顺&quot;改造到&quot;别人也能跑通&quot;，做了一次 PM 视角的体验审计和一套引导向导，记录这个过程里关于设计、诊断、模板创建、错误回退的思考与坑。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="publisher 的上手鸿沟：一次面向新用户的体验重构">
+<meta property="og:url" content="https://maimengshangren.github.io/2026/06/08/publisher-de-shang-shou-hong-gou-yi-ci-mian-xiang-xin-yong-hu-de-ti-yan-zhong-gou/index.html">
+<meta property="og:site_name" content="Layne&#39;s Blog">
+<meta property="og:description" content="自己写的工具一开始只对自己友好。把它从&quot;我用着顺&quot;改造到&quot;别人也能跑通&quot;，做了一次 PM 视角的体验审计和一套引导向导，记录这个过程里关于设计、诊断、模板创建、错误回退的思考与坑。">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://maimengshangren.github.io/img/butterfly-icon.png">
+<meta property="article:published_time" content="2026-06-08T14:30:00.000Z">
+<meta property="article:modified_time" content="2026-06-09T16:53:07.055Z">
+<meta property="article:author" content="Layne">
+<meta property="article:tag" content="React">
+<meta property="article:tag" content="Tauri">
+<meta property="article:tag" content="上手体验">
+<meta property="article:tag" content="产品设计">
+<meta property="article:tag" content="自建工具">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://maimengshangren.github.io/img/butterfly-icon.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "publisher 的上手鸿沟：一次面向新用户的体验重构",
+  "url": "https://maimengshangren.github.io/2026/06/08/publisher-de-shang-shou-hong-gou-yi-ci-mian-xiang-xin-yong-hu-de-ti-yan-zhong-gou/",
+  "image": "https://maimengshangren.github.io/img/butterfly-icon.png",
+  "datePublished": "2026-06-08T14:30:00.000Z",
+  "dateModified": "2026-06-09T16:53:07.055Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "Layne",
+      "url": "https://maimengshangren.github.io"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://maimengshangren.github.io/2026/06/08/publisher-de-shang-shou-hong-gou-yi-ci-mian-xiang-xin-yong-hu-de-ti-yan-zhong-gou/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css?v=5.5.4"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.1.0/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: undefined,
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":false},
+  copy: {
+    success: '复制成功',
+    error: '复制失败',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.13.0/dist/infinitegrid.min.js',
+    buttonText: '加载更多'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'publisher 的上手鸿沟：一次面向新用户的体验重构',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 8.1.2"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">4</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">11</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/img/banner.jpg);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><span class="site-name">Layne's Blog</span></a><a class="nav-page-title" href="/"><span class="site-name">publisher 的上手鸿沟：一次面向新用户的体验重构</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  返回首页</span></span></a></span><div id="menus"><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-user"></i><span> 关于</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">publisher 的上手鸿沟：一次面向新用户的体验重构</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2026-06-08T14:30:00.000Z" title="发表于 2026-06-08 22:30:00">2026-06-08</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2026-06-09T16:53:07.055Z" title="更新于 2026-06-10 00:53:07">2026-06-10</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%8A%80%E6%9C%AF/">技术</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">浏览量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h2 id="起点：工具能用，但只对我自己"><a href="#起点：工具能用，但只对我自己" class="headerlink" title="起点：工具能用，但只对我自己"></a>起点：工具能用，但只对我自己</h2><p>发布器 <code>publisher</code> 已经能从本地 Markdown &#x2F; Notion 一路推到 Hexo 博客线上，CLI 跑通了，桌面 GUI（Tauri + Python sidecar）也跑起来了。我自己在用，每天发一篇，挺顺。</p>
+<p>直到我假想”如果一个新人想用这个工具会怎么样”。</p>
+<p>我在脑子里跑了一遍流程：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">1. 装 Homebrew、Node、Python、Rust、gh</span><br><span class="line">2. clone publisher</span><br><span class="line">3. python -m venv + pip install</span><br><span class="line">4. cd desktop &amp;&amp; npm install</span><br><span class="line">5. npm run tauri dev  ← 这里 Rust 第一次编译 5-10 分钟</span><br><span class="line">6. 终于打开 App，看到空 Articles 列表 + 一个紫色按钮</span><br><span class="line">7. ⚙ 设置 → 看到 `repo_path: ../...` ← 我哪有那个目录？</span><br><span class="line">8. 📊 数据 → 红色 &quot;GitHub Token 未配置&quot;</span><br><span class="line">9. 不知道下一步该干啥</span><br></pre></td></tr></table></figure>
+
+<p>第 1–5 步劝退一半人，第 6–9 步劝退另一半。</p>
+<p><strong>这不是功能不全的问题，是上手鸿沟的问题。</strong></p>
+<h2 id="戴上-PM-帽子：把摩擦点摘出来"><a href="#戴上-PM-帽子：把摩擦点摘出来" class="headerlink" title="戴上 PM 帽子：把摩擦点摘出来"></a>戴上 PM 帽子：把摩擦点摘出来</h2><p>强行换视角，把现状所有让新用户卡壳的地方列下来：</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>问题</th>
+<th>痛点深度</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>App 默认进 Articles，假设你已经配好</td>
+<td>⚫⚫⚫ 阻断</td>
+</tr>
+<tr>
+<td>2</td>
+<td>没博客仓库的人<strong>根本走不下去</strong></td>
+<td>⚫⚫⚫⚫ 流失</td>
+</tr>
+<tr>
+<td>3</td>
+<td>gh 一键导入按钮藏在 Stats 401 错误里</td>
+<td>⚫⚫ 反直觉</td>
+</tr>
+<tr>
+<td>4</td>
+<td>没有”配置完整度”指示</td>
+<td>⚫⚫ 焦虑</td>
+</tr>
+<tr>
+<td>5</td>
+<td>发布失败就是个 stderr toast</td>
+<td>⚫⚫⚫ 看不懂</td>
+</tr>
+</tbody></table>
+<p>修补方向也清晰：</p>
+<ul>
+<li><strong>引导向导</strong>：第一次打开时强制走一遍关键配置</li>
+<li><strong>诊断页</strong>：把工具的健康状态做成一个可看可修的清单</li>
+<li><strong>草稿模板</strong>：第一篇有内容可参考，不至于对着空 md 发愁</li>
+</ul>
+<h2 id="引导向导：4-步全屏-wizard"><a href="#引导向导：4-步全屏-wizard" class="headerlink" title="引导向导：4 步全屏 wizard"></a>引导向导：4 步全屏 wizard</h2><p>4 步的设计是经过取舍的——3 步太赶，5 步嫌啰嗦：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">欢迎  →  GitHub  →  博客  →  验证</span><br><span class="line"> 1       2         3       4</span><br></pre></td></tr></table></figure>
+
+<h3 id="Step-1-·-欢迎"><a href="#Step-1-·-欢迎" class="headerlink" title="Step 1 · 欢迎"></a>Step 1 · 欢迎</h3><p>故意做得<strong>只读</strong>——一段说明 + 3 个 bullet。让用户先理解工具在帮 ta 解决什么，再开始做事。没有 input、没有按钮，只有「下一步」。</p>
+<h3 id="Step-2-·-连接-GitHub"><a href="#Step-2-·-连接-GitHub" class="headerlink" title="Step 2 · 连接 GitHub"></a>Step 2 · 连接 GitHub</h3><p>3 张选项卡：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">(  ) 从 gh CLI 自动导入（推荐）</span><br><span class="line">(  ) 手动粘贴 Personal Access Token</span><br><span class="line">(  ) 还没账户 — 去注册</span><br></pre></td></tr></table></figure>
+
+<p>第一条是关键路径：<code>Command::new(&quot;gh&quot;).arg(&quot;auth&quot;).arg(&quot;token&quot;)</code> 抓出来 → 写 macOS Keychain → 重启 App 时自动注入 sidecar <code>env</code>。</p>
+<p>让用户走”配置 token”这件事<strong>变成一个按钮</strong>，而不是去 GitHub 网页生成 PAT、回来粘贴这种 6 步动作。</p>
+<h3 id="Step-3-·-选博客"><a href="#Step-3-·-选博客" class="headerlink" title="Step 3 · 选博客"></a>Step 3 · 选博客</h3><p>最难设计的一步。一开始我只放了 2 个选项（”已 clone” 和 “需要 clone”），上线后被新用户教做人——“我完全没有博客怎么办”。</p>
+<p>后来加了第 3 张：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">(  ) 还没博客 — 用模板新建一个</span><br><span class="line">    └─ 新仓库名（默认 &lt;user&gt;.github.io）</span><br><span class="line">    └─ 父目录</span><br><span class="line">    └─ 站点标题 / 作者（可选）</span><br><span class="line">    [ 一键创建（repo + clone + 装依赖）]</span><br></pre></td></tr></table></figure>
+
+<p>后端逻辑：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">gh_create = [<span class="string">&quot;gh&quot;</span>, <span class="string">&quot;repo&quot;</span>, <span class="string">&quot;create&quot;</span>, req.name,</span><br><span class="line">             <span class="string">&quot;--public&quot;</span>,</span><br><span class="line">             <span class="string">&quot;--template&quot;</span>, req.template,</span><br><span class="line">             <span class="string">&quot;--clone&quot;</span>]</span><br></pre></td></tr></table></figure>
+
+<p>模板仓库是我自己博客的副本（<code>gh api -X PATCH /repos/.../... -f is_template=true</code>）。任何人现在都可以基于我的博客 30 秒内立一个新站。</p>
+<h3 id="Step-4-·-验证"><a href="#Step-4-·-验证" class="headerlink" title="Step 4 · 验证"></a>Step 4 · 验证</h3><p>复用诊断清单的组件。<strong>这是这条产品的灵魂</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">✓  gh CLI 已安装</span><br><span class="line">✓  gh 已登录 — 账户：alice</span><br><span class="line">✓  GitHub Token 已注入 sidecar</span><br><span class="line">✓  博客仓库存在 — /Users/alice/alice.github.io</span><br><span class="line">✓  是 git 仓库</span><br><span class="line">✓  远端 origin 已配置</span><br><span class="line">✓  检测到 _config.yml</span><br><span class="line">✓  GitHub Actions 部署 workflow</span><br><span class="line">⚠  hexo 依赖已安装 — 还没跑 `npm install` [怎么装？]</span><br><span class="line">·  Notion 集成（可选）</span><br></pre></td></tr></table></figure>
+
+<p>每项除了状态，还可能带一个 <code>fix</code> 字段——前端按 fix id 决定渲染什么按钮：</p>
+<figure class="highlight typescript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">if</span> (fix === <span class="string">&quot;import-gh-token&quot;</span>) <span class="keyword">return</span> <span class="title function_">wrap</span>(<span class="string">&quot;从 gh 自动导入&quot;</span>, importFromGh);</span><br><span class="line"><span class="keyword">if</span> (fix === <span class="string">&quot;choose-blog-path&quot;</span>) <span class="keyword">return</span> <span class="title function_">wrap</span>(<span class="string">&quot;选择目录&quot;</span>, pickAndSave);</span><br><span class="line"><span class="keyword">if</span> (fix === <span class="string">&quot;install-gh&quot;</span>)       <span class="keyword">return</span> <span class="title function_">wrap</span>(<span class="string">&quot;如何安装 gh&quot;</span>, openDocs);</span><br></pre></td></tr></table></figure>
+
+<p>诊断清单<strong>永久存在</strong>——sidebar 多了一个「诊断」入口，配置坏了随时回来看。</p>
+<h2 id="几个实现上的小心思"><a href="#几个实现上的小心思" class="headerlink" title="几个实现上的小心思"></a>几个实现上的小心思</h2><h3 id="用-kv-表存”是否完成引导”"><a href="#用-kv-表存”是否完成引导”" class="headerlink" title="用 kv 表存”是否完成引导”"></a>用 kv 表存”是否完成引导”</h3><p>不想为单个布尔值再加张表，直接在 <code>state/published.sqlite</code> 里加一张通用的 kv：</p>
+<figure class="highlight sql"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">CREATE TABLE</span> IF <span class="keyword">NOT</span> <span class="keyword">EXISTS</span> kv (</span><br><span class="line">    key        TEXT <span class="keyword">PRIMARY KEY</span>,</span><br><span class="line">    <span class="keyword">value</span>      TEXT <span class="keyword">NOT NULL</span>,</span><br><span class="line">    updated_at TEXT <span class="keyword">NOT NULL</span></span><br><span class="line">);</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@router.get(<span class="params"><span class="string">&quot;/onboarding/state&quot;</span></span>)</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">get_state</span>() -&gt; <span class="built_in">dict</span>:</span><br><span class="line">    <span class="keyword">return</span> &#123;<span class="string">&quot;onboarded&quot;</span>: store.kv_get(<span class="string">&quot;onboarded&quot;</span>) == <span class="string">&quot;true&quot;</span>&#125;</span><br></pre></td></tr></table></figure>
+
+<p>App 启动时 <code>GET /onboarding/state</code>，返回 <code>false</code> 就渲染 <code>&lt;OnboardingWizard /&gt;</code> 把整个窗口盖住。</p>
+<h3 id="全屏-overlay-而不是-modal"><a href="#全屏-overlay-而不是-modal" class="headerlink" title="全屏 overlay 而不是 modal"></a>全屏 overlay 而不是 modal</h3><p>第一次写的时候做成了居中 modal，调起来发现新用户<strong>真会去点旁边那一圈</strong>。改成全屏 overlay 强制聚焦，背景直接是 App 背景色——不让你有机会逃。</p>
+<p>CSS 干净到这种程度：</p>
+<figure class="highlight css"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="selector-class">.wizard-overlay</span> &#123;</span><br><span class="line">  <span class="attribute">position</span>: fixed; <span class="attribute">inset</span>: <span class="number">0</span>;</span><br><span class="line">  <span class="attribute">background</span>: <span class="built_in">var</span>(--bg);</span><br><span class="line">  <span class="attribute">z-index</span>: <span class="number">100</span>;</span><br><span class="line">  <span class="attribute">display</span>: flex;</span><br><span class="line">  <span class="attribute">align-items</span>: center;</span><br><span class="line">  <span class="attribute">justify-content</span>: center;</span><br><span class="line">  <span class="attribute">animation</span>: overlayIn <span class="built_in">var</span>(--dur) <span class="built_in">var</span>(--ease);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="进度条只标”已完成”和”当前”"><a href="#进度条只标”已完成”和”当前”" class="headerlink" title="进度条只标”已完成”和”当前”"></a>进度条只标”已完成”和”当前”</h3><p>很常见的进度条做法是 1&#x2F;4 &#x2F; 2&#x2F;4 &#x2F; 3&#x2F;4 数字，我觉得密度太高。改成 4 条 4px 圆角条，已完成是品牌色、当前是品牌色、未来是浅灰。一眼能看完。</p>
+<figure class="highlight jsx"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&lt;div className=<span class="string">&quot;wizard-progress&quot;</span>&gt;</span><br><span class="line">  &#123;<span class="title class_">Array</span>.<span class="title function_">from</span>(&#123; <span class="attr">length</span>: <span class="number">4</span> &#125;).<span class="title function_">map</span>(<span class="function">(<span class="params">_, i</span>) =&gt;</span> (</span><br><span class="line">    <span class="language-xml"><span class="tag">&lt;<span class="name">div</span> <span class="attr">className</span>=<span class="string">&#123;</span>`<span class="attr">dot</span> $&#123;<span class="attr">i</span> &lt; <span class="attr">step</span> ? &quot;<span class="attr">done</span>&quot; <span class="attr">:</span> <span class="attr">i</span> === <span class="string">step</span> ? &quot;<span class="attr">active</span>&quot; <span class="attr">:</span> &quot;&quot;&#125;`&#125; /&gt;</span></span></span><br><span class="line">  ))&#125;</span><br><span class="line">&lt;/div&gt;</span><br></pre></td></tr></table></figure>
+
+<h3 id="选项卡片不是-radio-是按钮"><a href="#选项卡片不是-radio-是按钮" class="headerlink" title="选项卡片不是 radio 是按钮"></a>选项卡片不是 radio 是按钮</h3><p>按钮整张可点击命中，UI 现代且大区域好按。<code>.ring</code> 那个圈 + <code>::after</code> 实现”选中点”，比 native radio 更可控：</p>
+<figure class="highlight css"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="selector-class">.opt-card</span><span class="selector-class">.selected</span> <span class="selector-class">.ring</span><span class="selector-pseudo">::after</span> &#123;</span><br><span class="line">  <span class="attribute">content</span>: <span class="string">&quot;&quot;</span>;</span><br><span class="line">  <span class="attribute">position</span>: absolute;</span><br><span class="line">  <span class="attribute">inset</span>: <span class="number">3px</span>;</span><br><span class="line">  <span class="attribute">background</span>: <span class="built_in">var</span>(--brand);</span><br><span class="line">  <span class="attribute">border-radius</span>: <span class="number">50%</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="跑通之后立刻露馅：4-个新坑"><a href="#跑通之后立刻露馅：4-个新坑" class="headerlink" title="跑通之后立刻露馅：4 个新坑"></a>跑通之后立刻露馅：4 个新坑</h2><p>写完上面这套，本以为终于”对新用户友好”。</p>
+<p>让 wizard 重置 <code>onboarded</code> 标志再跑一遍，自己模拟新用户视角，<strong>立刻看到 4 个仍然会卡的地方</strong>：</p>
+<h3 id="坑-1-·-模板创建博客后没自动装依赖"><a href="#坑-1-·-模板创建博客后没自动装依赖" class="headerlink" title="坑 1 · 模板创建博客后没自动装依赖"></a>坑 1 · 模板创建博客后没自动装依赖</h3><p><code>gh repo create --template</code> 把仓库 clone 下来了，但 <code>node_modules/</code> 是空的。<code>hexo s</code> 启不动，诊断会显示一条黄色 ⚠。</p>
+<p>解法是把”装依赖”也封进流程：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@router.post(<span class="params"><span class="string">&quot;/blog/install-deps&quot;</span></span>)</span></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">install_deps</span>(<span class="params">req</span>):</span><br><span class="line">    out = subprocess.run(</span><br><span class="line">        [<span class="string">&quot;npm&quot;</span>, <span class="string">&quot;install&quot;</span>], cwd=root,</span><br><span class="line">        capture_output=<span class="literal">True</span>, text=<span class="literal">True</span>, timeout=<span class="number">360</span>,</span><br><span class="line">    )</span><br><span class="line">    <span class="keyword">if</span> out.returncode != <span class="number">0</span>:</span><br><span class="line">        tail = <span class="string">&quot;\n&quot;</span>.join((out.stderr <span class="keyword">or</span> out.stdout).splitlines()[-<span class="number">30</span>:])</span><br><span class="line">        <span class="keyword">raise</span> HTTPException(<span class="number">400</span>, <span class="string">f&quot;npm install 失败：<span class="subst">&#123;tail&#125;</span>&quot;</span>)</span><br><span class="line">    <span class="keyword">return</span> &#123;<span class="string">&quot;ok&quot;</span>: <span class="literal">True</span>&#125;</span><br></pre></td></tr></table></figure>
+
+<p>前端按钮文案变成<strong>分阶段</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">&quot;创建 GitHub 仓库…&quot;    ← 5-10s</span><br><span class="line">&quot;装依赖中…（1-3 分钟）&quot; ← 60-180s</span><br><span class="line">&quot;✓ 已完成&quot;</span><br></pre></td></tr></table></figure>
+
+<p>新用户拉条进度看着等就行，不用打开终端。</p>
+<h3 id="坑-2-·-wizard-完成后用户不知道下一步干啥"><a href="#坑-2-·-wizard-完成后用户不知道下一步干啥" class="headerlink" title="坑 2 · wizard 完成后用户不知道下一步干啥"></a>坑 2 · wizard 完成后用户不知道下一步干啥</h3><p>Step 4 「完成」按钮按下去直接关闭——结果用户看到空 Articles 列表 + 一个紫色按钮，茫然。</p>
+<p>加一屏「就绪页」：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">✨ 准备好开始了</span><br><span class="line"></span><br><span class="line">[ ✍️ 写第一篇 ]   [ 🏠 看看主页 ]   [ 🎨 改改主题 ]</span><br></pre></td></tr></table></figure>
+
+<p>点 「写第一篇」 → 跳到 Articles Tab + <strong>自动弹新建草稿框</strong>。从”配置完成”到”键盘可以开始敲字”压缩到一次点击。</p>
+<p>实现上用一个 <code>pendingAction</code> signal 跨组件传：</p>
+<figure class="highlight tsx"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">&lt;<span class="title class_">ArticlesTab</span> pendingAction=&#123;pendingAction&#125; onActionConsumed=&#123;...&#125; /&gt;</span><br><span class="line"></span><br><span class="line"><span class="title function_">useEffect</span>(<span class="function">() =&gt;</span> &#123;</span><br><span class="line">  <span class="keyword">if</span> (pendingAction === <span class="string">&quot;new-draft&quot;</span>) &#123;</span><br><span class="line">    <span class="title function_">setShowNew</span>(<span class="literal">true</span>);</span><br><span class="line">    onActionConsumed?.();</span><br><span class="line">  &#125;</span><br><span class="line">&#125;, [pendingAction]);</span><br></pre></td></tr></table></figure>
+
+<h3 id="坑-3-·-gh-不存在时的体验"><a href="#坑-3-·-gh-不存在时的体验" class="headerlink" title="坑 3 · gh 不存在时的体验"></a>坑 3 · gh 不存在时的体验</h3><p><code>gh</code> 不在 PATH 上时，Step 2 那张「从 gh CLI 导入」卡片<strong>点了会失败</strong>，错误信息又是 stderr 那种工程师视角的。</p>
+<p>加一个前置探测，没装时<strong>直接把卡片禁用</strong>+ 弹一个黄色提示：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">⚠ 未检测到 gh CLI</span><br><span class="line"></span><br><span class="line">在终端里跑下面这条命令装上（一次性，全程 30 秒）：</span><br><span class="line"></span><br><span class="line">[ brew install gh ]   [复制]   [重新检测]</span><br><span class="line"></span><br><span class="line">还没装 Homebrew？ brew.sh</span><br></pre></td></tr></table></figure>
+
+<p>复制按钮调 <code>navigator.clipboard.writeText</code>，重新检测调 <code>/diagnostics</code> 看 <code>gh.installed</code> 是否变绿。让”装 gh”这件事变成 3 个具体动作而不是一句”gh not found”。</p>
+<h3 id="坑-4-·-编辑器命令默认是-code，但很多人没装-shell-命令"><a href="#坑-4-·-编辑器命令默认是-code，但很多人没装-shell-命令" class="headerlink" title="坑 4 · 编辑器命令默认是 code，但很多人没装 shell 命令"></a>坑 4 · 编辑器命令默认是 <code>code</code>，但很多人没装 shell 命令</h3><p>我在 <code>config.yaml</code> 里把 <code>editor_command</code> 默认值放成 <code>code</code>，背后假设是 VS Code 用户都装过 <code>Shell Command: Install &#39;code&#39; command in PATH</code>。</p>
+<p>实际上很多人没装过——结果”在 VS Code 中打开”会 fallback 到 <code>open &lt;file&gt;</code>，文件被 Typora（或别的默认应用）打开，看上去像 App 在乱搞。</p>
+<p>加了个 startup hook：</p>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">fn</span> <span class="title function_">auto_detect_editor_at_startup</span>(project_root: &amp;Path) &#123;</span><br><span class="line">    <span class="comment">// 如果用户已经手动设过非 `code` 的值，尊重它</span></span><br><span class="line">    <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(cur) = current &#123; <span class="comment">/* 跳过 */</span> &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 否则按优先级探一遍</span></span><br><span class="line">    <span class="keyword">const</span> CANDIDATES: &amp;[&amp;<span class="type">str</span>] = &amp;[<span class="string">&quot;code&quot;</span>, <span class="string">&quot;cursor&quot;</span>, <span class="string">&quot;subl&quot;</span>, <span class="string">&quot;mate&quot;</span>, <span class="string">&quot;atom&quot;</span>, <span class="string">&quot;idea&quot;</span>];</span><br><span class="line">    <span class="keyword">for</span> <span class="variable">c</span> <span class="keyword">in</span> CANDIDATES &#123;</span><br><span class="line">        <span class="keyword">if</span> which::<span class="title function_ invoke__">which</span>(c).<span class="title function_ invoke__">is_ok</span>() &#123;</span><br><span class="line">            <span class="comment">// 写入 config.yaml</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个 hook 在 <code>tauri::Builder::setup</code> 里跑，<strong>比 sidecar 启动更早</strong>——保证 <code>/load_config</code> 第一次返回时就已经是检测好的值。</p>
+<p><strong>完全静默</strong>。不打扰用户。这种系统判断”哪个编辑器是合理默认”的事，最好的 UX 就是用户根本没意识到它发生过。</p>
+<h2 id="反思：从”我用着顺”到”别人能跑通”"><a href="#反思：从”我用着顺”到”别人能跑通”" class="headerlink" title="反思：从”我用着顺”到”别人能跑通”"></a>反思：从”我用着顺”到”别人能跑通”</h2><p>这一段重构让我对自建工具的”完成度”重新校准了一下：</p>
+<table>
+<thead>
+<tr>
+<th>我以为完成度是</th>
+<th>实际上完成度是</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>功能跑通了</td>
+<td>新用户能在 10 分钟内独立用起来</td>
+</tr>
+<tr>
+<td>CLI 有 help</td>
+<td>UI 有 zero-config 默认值</td>
+</tr>
+<tr>
+<td>错误能抛</td>
+<td>错误能被普通用户读懂、知道下一步做啥</td>
+</tr>
+<tr>
+<td>我能配置</td>
+<td>配置错了能自动检测出来并指条路</td>
+</tr>
+</tbody></table>
+<p>写工具的时候很容易陷入”功能驱动”——做了 A，做了 B，做了 C，列表越长越满足。但<strong>功能列表不等于产品</strong>。同样的功能集，加一层引导和一个诊断页，对新用户来说是天壤之别。</p>
+<p>下一步是<strong>打包成 <code>.app</code></strong>——前面所有 UX 努力，对装不上 Rust&#x2F;Python&#x2F;Node 的真人来说还是看不到。这一关过了，才算真正把工具递到别人手里。</p>
+<h2 id="后续清单"><a href="#后续清单" class="headerlink" title="后续清单"></a>后续清单</h2><ul>
+<li><input disabled="" type="checkbox"> PyInstaller 打 Python sidecar 单二进制</li>
+<li><input disabled="" type="checkbox"> tauri.conf.json 配 <code>externalBin</code> 把 sidecar bundle 进 <code>.app</code></li>
+<li><input disabled="" type="checkbox"> Apple Developer ID 签名 + DMG 包装</li>
+<li><input disabled="" type="checkbox"> 发布失败错误规则匹配翻译</li>
+<li><input disabled="" type="checkbox"> 样式 Tab 保存前自动 <code>git stash</code> 兜底</li>
+</ul>
+<p>源码：<a target="_blank" rel="noopener" href="https://github.com/maimengshangren/publisher">https://github.com/maimengshangren/publisher</a>。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>文章作者: </span><span class="post-copyright-info"><a href="https://maimengshangren.github.io">Layne</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>文章链接: </span><span class="post-copyright-info"><a href="https://maimengshangren.github.io/2026/06/08/publisher-de-shang-shou-hong-gou-yi-ci-mian-xiang-xin-yong-hu-de-ti-yan-zhong-gou/">https://maimengshangren.github.io/2026/06/08/publisher-de-shang-shou-hong-gou-yi-ci-mian-xiang-xin-yong-hu-de-ti-yan-zhong-gou/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来源 <a href="https://maimengshangren.github.io" target="_blank">Layne's Blog</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Tauri/">Tauri</a><a class="post-meta__tags" href="/tags/%E4%BA%A7%E5%93%81%E8%AE%BE%E8%AE%A1/">产品设计</a><a class="post-meta__tags" href="/tags/%E4%B8%8A%E6%89%8B%E4%BD%93%E9%AA%8C/">上手体验</a><a class="post-meta__tags" href="/tags/React/">React</a><a class="post-meta__tags" href="/tags/%E8%87%AA%E5%BB%BA%E5%B7%A5%E5%85%B7/">自建工具</a></div><div class="post-share"><div class="social-share" data-image="/img/butterfly-icon.png" data-sites="facebook,x,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related" href="/2026/06/09/hello-world/" title="Hello World"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info"><div class="info-1"><div class="info-item-1">上一篇</div><div class="info-item-2">Hello World</div></div><div class="info-2"><div class="info-item-1">Welcome to Hexo! This is your very first post. Check documentation for more info. If you get any problems when using Hexo, you can find the answer in troubleshooting or you can ask me on GitHub. Quick StartCreate a new post1$ hexo new &quot;My New Post&quot;  More info: Writing Run server1$ hexo server  More info: Server Generate static files1$ hexo generate  More info: Generating Deploy to remote sites1$ hexo deploy  More info: Deployment </div></div></div></a><a class="pagination-related" href="/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/" title="为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-right"><div class="info-1"><div class="info-item-1">下一篇</div><div class="info-item-2">为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API</div></div><div class="info-2"><div class="info-item-1">上一篇我把 publisher 这个发布器的 CLI 版本做出来了：本地 Markdown 或 Notion 文章一键发到 Hexo 博客。CLI 自己用是够了，但要把”草稿箱、已发管理、撤回、站点风格编辑”这些可视化需求落地，得加个桌面 GUI。 这一篇记录 D1 阶段：把 CLI 的核心能力包成 HTTP API，给后续 Tauri 前端用。整篇都是技术细节，不长。 形态决定：Tauri + Python sidecar技术栈在动手之前先拍板。备选三个：    方案 优点 缺点    Electron + Node 重写 生态熟 包大、内存高，还得把 publisher 的 Python 逻辑全翻译一遍   纯 Rust + Tauri 包最小、最快 现有 Python 代码作废   Tauri + Python sidecar 包小、复用 publisher 包、桌面原生体验 需要让 Tauri 启动时拉起 Python 子进程，端到端调试稍麻烦   选第三个。Tauri 主进程（Rust + WebView）只做壳子，Python 作为 sidecar 跑一个本地 HTT...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/" title="为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-06-07</div><div class="info-item-2">为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API</div></div><div class="info-2"><div class="info-item-1">上一篇我把 publisher 这个发布器的 CLI 版本做出来了：本地 Markdown 或 Notion 文章一键发到 Hexo 博客。CLI 自己用是够了，但要把”草稿箱、已发管理、撤回、站点风格编辑”这些可视化需求落地，得加个桌面 GUI。 这一篇记录 D1 阶段：把 CLI 的核心能力包成 HTTP API，给后续 Tauri 前端用。整篇都是技术细节，不长。 形态决定：Tauri + Python sidecar技术栈在动手之前先拍板。备选三个：    方案 优点 缺点    Electron + Node 重写 生态熟 包大、内存高，还得把 publisher 的 Python 逻辑全翻译一遍   纯 Rust + Tauri 包最小、最快 现有 Python 代码作废   Tauri + Python sidecar 包小、复用 publisher 包、桌面原生体验 需要让 Tauri 启动时拉起 Python 子进程，端到端调试稍麻烦   选第三个。Tauri 主进程（Rust + WebView）只做壳子，Python 作为 sidecar 跑一个本地 HTT...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/butterfly-icon.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">Layne</div><div class="author-info-description">个人博客 - 记录学习与生活</div><div class="site-data"><a href="/archives/"><div class="headline">文章</div><div class="length-num">4</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">11</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/xxxxxx"><i class="fab fa-github"></i><span>Follow Me</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/maimengshangren" target="_blank" title="Github"><i class="fab fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="mailto:maimengshangren@gmail.com" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #4a7dbe;"></i></a></div></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">This is my Blog</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%B5%B7%E7%82%B9%EF%BC%9A%E5%B7%A5%E5%85%B7%E8%83%BD%E7%94%A8%EF%BC%8C%E4%BD%86%E5%8F%AA%E5%AF%B9%E6%88%91%E8%87%AA%E5%B7%B1"><span class="toc-number">1.</span> <span class="toc-text">起点：工具能用，但只对我自己</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%88%B4%E4%B8%8A-PM-%E5%B8%BD%E5%AD%90%EF%BC%9A%E6%8A%8A%E6%91%A9%E6%93%A6%E7%82%B9%E6%91%98%E5%87%BA%E6%9D%A5"><span class="toc-number">2.</span> <span class="toc-text">戴上 PM 帽子：把摩擦点摘出来</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%BC%95%E5%AF%BC%E5%90%91%E5%AF%BC%EF%BC%9A4-%E6%AD%A5%E5%85%A8%E5%B1%8F-wizard"><span class="toc-number">3.</span> <span class="toc-text">引导向导：4 步全屏 wizard</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#Step-1-%C2%B7-%E6%AC%A2%E8%BF%8E"><span class="toc-number">3.1.</span> <span class="toc-text">Step 1 · 欢迎</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Step-2-%C2%B7-%E8%BF%9E%E6%8E%A5-GitHub"><span class="toc-number">3.2.</span> <span class="toc-text">Step 2 · 连接 GitHub</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Step-3-%C2%B7-%E9%80%89%E5%8D%9A%E5%AE%A2"><span class="toc-number">3.3.</span> <span class="toc-text">Step 3 · 选博客</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#Step-4-%C2%B7-%E9%AA%8C%E8%AF%81"><span class="toc-number">3.4.</span> <span class="toc-text">Step 4 · 验证</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%87%A0%E4%B8%AA%E5%AE%9E%E7%8E%B0%E4%B8%8A%E7%9A%84%E5%B0%8F%E5%BF%83%E6%80%9D"><span class="toc-number">4.</span> <span class="toc-text">几个实现上的小心思</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E7%94%A8-kv-%E8%A1%A8%E5%AD%98%E2%80%9D%E6%98%AF%E5%90%A6%E5%AE%8C%E6%88%90%E5%BC%95%E5%AF%BC%E2%80%9D"><span class="toc-number">4.1.</span> <span class="toc-text">用 kv 表存”是否完成引导”</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%85%A8%E5%B1%8F-overlay-%E8%80%8C%E4%B8%8D%E6%98%AF-modal"><span class="toc-number">4.2.</span> <span class="toc-text">全屏 overlay 而不是 modal</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E8%BF%9B%E5%BA%A6%E6%9D%A1%E5%8F%AA%E6%A0%87%E2%80%9D%E5%B7%B2%E5%AE%8C%E6%88%90%E2%80%9D%E5%92%8C%E2%80%9D%E5%BD%93%E5%89%8D%E2%80%9D"><span class="toc-number">4.3.</span> <span class="toc-text">进度条只标”已完成”和”当前”</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E9%80%89%E9%A1%B9%E5%8D%A1%E7%89%87%E4%B8%8D%E6%98%AF-radio-%E6%98%AF%E6%8C%89%E9%92%AE"><span class="toc-number">4.4.</span> <span class="toc-text">选项卡片不是 radio 是按钮</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E8%B7%91%E9%80%9A%E4%B9%8B%E5%90%8E%E7%AB%8B%E5%88%BB%E9%9C%B2%E9%A6%85%EF%BC%9A4-%E4%B8%AA%E6%96%B0%E5%9D%91"><span class="toc-number">5.</span> <span class="toc-text">跑通之后立刻露馅：4 个新坑</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%9D%91-1-%C2%B7-%E6%A8%A1%E6%9D%BF%E5%88%9B%E5%BB%BA%E5%8D%9A%E5%AE%A2%E5%90%8E%E6%B2%A1%E8%87%AA%E5%8A%A8%E8%A3%85%E4%BE%9D%E8%B5%96"><span class="toc-number">5.1.</span> <span class="toc-text">坑 1 · 模板创建博客后没自动装依赖</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%9D%91-2-%C2%B7-wizard-%E5%AE%8C%E6%88%90%E5%90%8E%E7%94%A8%E6%88%B7%E4%B8%8D%E7%9F%A5%E9%81%93%E4%B8%8B%E4%B8%80%E6%AD%A5%E5%B9%B2%E5%95%A5"><span class="toc-number">5.2.</span> <span class="toc-text">坑 2 · wizard 完成后用户不知道下一步干啥</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%9D%91-3-%C2%B7-gh-%E4%B8%8D%E5%AD%98%E5%9C%A8%E6%97%B6%E7%9A%84%E4%BD%93%E9%AA%8C"><span class="toc-number">5.3.</span> <span class="toc-text">坑 3 · gh 不存在时的体验</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%9D%91-4-%C2%B7-%E7%BC%96%E8%BE%91%E5%99%A8%E5%91%BD%E4%BB%A4%E9%BB%98%E8%AE%A4%E6%98%AF-code%EF%BC%8C%E4%BD%86%E5%BE%88%E5%A4%9A%E4%BA%BA%E6%B2%A1%E8%A3%85-shell-%E5%91%BD%E4%BB%A4"><span class="toc-number">5.4.</span> <span class="toc-text">坑 4 · 编辑器命令默认是 code，但很多人没装 shell 命令</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%8F%8D%E6%80%9D%EF%BC%9A%E4%BB%8E%E2%80%9D%E6%88%91%E7%94%A8%E7%9D%80%E9%A1%BA%E2%80%9D%E5%88%B0%E2%80%9D%E5%88%AB%E4%BA%BA%E8%83%BD%E8%B7%91%E9%80%9A%E2%80%9D"><span class="toc-number">6.</span> <span class="toc-text">反思：从”我用着顺”到”别人能跑通”</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%90%8E%E7%BB%AD%E6%B8%85%E5%8D%95"><span class="toc-number">7.</span> <span class="toc-text">后续清单</span></a></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/09/hello-world/" title="Hello World">Hello World</a><time datetime="2026-06-09T16:53:07.055Z" title="发表于 2026-06-10 00:53:07">2026-06-10</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/08/publisher-de-shang-shou-hong-gou-yi-ci-mian-xiang-xin-yong-hu-de-ti-yan-zhong-gou/" title="publisher 的上手鸿沟：一次面向新用户的体验重构">publisher 的上手鸿沟：一次面向新用户的体验重构</a><time datetime="2026-06-08T14:30:00.000Z" title="发表于 2026-06-08 22:30:00">2026-06-08</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/07/wei-publisher-jie-ru-zhuo-mian-gui-di-yi-bu-ba-cli-bao-cheng-python-api/" title="为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API">为 publisher 接入桌面 GUI：第一步把 CLI 包成 Python API</a><time datetime="2026-06-07T13:00:00.000Z" title="发表于 2026-06-07 21:00:00">2026-06-07</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/06/07/zi-jian-bo-ke-fa-bu-qi-publisher-de-shi-xian-si-lu/" title="自建博客发布器 publisher 的实现思路">自建博客发布器 publisher 的实现思路</a><time datetime="2026-06-07T12:00:00.000Z" title="发表于 2026-06-07 20:00:00">2026-06-07</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By Layne</span><span class="framework-info"><span>框架 </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo 8.1.2</a><span class="footer-separator">|</span><span>主题 </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly 5.5.4</a></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="日间和夜间模式切换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.4"></script><script src="/js/main.js?v=5.5.4"></script><div class="js-pjax"></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script></div></body></html>
