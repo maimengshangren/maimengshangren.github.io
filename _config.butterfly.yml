@@ -263,7 +263,7 @@ footer:
     since: 2025
   # Copyright of theme and framework
   copyright:
-    enable: true
+    enable: false
     version: true
   custom_text: '路虽远 行则将至'
 
