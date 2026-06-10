@@ -265,7 +265,7 @@ footer:
   copyright:
     enable: true
     version: true
-  custom_text:
+  custom_text: '路虽远 行则将至'
 
 # --------------------------------------
 # Aside Settings
