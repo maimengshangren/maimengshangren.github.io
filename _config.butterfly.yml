@@ -1135,3 +1135,6 @@ CDN:
     # valine:
     # waline_css:
     # waline_js:
+
+theme_color:
+  main_color: '#874efe'
