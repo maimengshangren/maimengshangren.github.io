@@ -263,7 +263,7 @@ footer:
     since: 2025
   # Copyright of theme and framework
   copyright:
-    enable: false
+    enable: true
     version: true
   custom_text: '路虽远 行则将至'
 
@@ -1137,4 +1137,8 @@ CDN:
     # waline_js:
 
 theme_color:
-  main_color: '#874efe'
+  main_color: '#74a7fe'
+
+
+reading_time:
+  enable: true
